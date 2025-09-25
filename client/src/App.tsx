@@ -8,10 +8,28 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 
 const BACKEND_URL = "http://localhost:8000";
 
+interface DocumentVersion {
+  id: number;
+  document_id: number;
+  version_number: number;
+  content: string;
+  created_at: string;
+  name: string;
+}
+
+interface DocumentInfo {
+  id: number;
+  title: string;
+}
+
 function App() {
-  const [currentDocumentContent, setCurrentDocumentContent] =
-    useState<string>("");
+  // Stateless frontend state management
+  const [currentDocumentContent, setCurrentDocumentContent] = useState<string>("");
   const [currentDocumentId, setCurrentDocumentId] = useState<number>(0);
+  const [currentDocumentInfo, setCurrentDocumentInfo] = useState<DocumentInfo | null>(null);
+  const [selectedVersionNumber, setSelectedVersionNumber] = useState<number>(1);
+  const [availableVersions, setAvailableVersions] = useState<DocumentVersion[]>([]);
+  const [isDirty, setIsDirty] = useState<boolean>(false);  // Has content been modified?
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
   // Load the first patent on mount
@@ -19,33 +37,115 @@ function App() {
     loadPatent(1);
   }, []);
 
-  // Callback to load a patent from the backend
+  // Load a document with stateless architecture
   const loadPatent = async (documentNumber: number) => {
     setIsLoading(true);
     console.log("Loading patent:", documentNumber);
     try {
-      const response = await axios.get(
+      // Load document metadata (stateless - no content in document)
+      const docResponse = await axios.get(
         `${BACKEND_URL}/document/${documentNumber}`
       );
-      setCurrentDocumentContent(response.data.content);
+
+      // Load all versions
+      const versionsResponse = await axios.get(
+        `${BACKEND_URL}/document/${documentNumber}/versions`
+      );
+
+      const versions = versionsResponse.data.versions;
       setCurrentDocumentId(documentNumber);
+      setCurrentDocumentInfo(docResponse.data);
+      setAvailableVersions(versions);
+
+      // Load the latest version as the starting content
+      if (versions.length > 0) {
+        const latestVersion = versions[versions.length - 1];
+        setCurrentDocumentContent(latestVersion.content);
+        setSelectedVersionNumber(latestVersion.version_number);
+      }
+
+      setIsDirty(false);
     } catch (error) {
       console.error("Error loading document:", error);
     }
     setIsLoading(false);
   };
 
-  // Callback to persist a patent in the DB
-  const savePatent = async (documentNumber: number) => {
+  // Update current version with new content
+  const saveCurrentVersion = async () => {
+    if (!isDirty) return; // Nothing to save
+
     setIsLoading(true);
     try {
-      await axios.post(`${BACKEND_URL}/save/${documentNumber}`, {
+      const currentVersion = availableVersions.find(v => v.version_number === selectedVersionNumber);
+      await axios.put(`${BACKEND_URL}/document/${currentDocumentId}/versions/${selectedVersionNumber}`, {
         content: currentDocumentContent,
+        name: currentVersion?.name || `Version ${selectedVersionNumber}`
       });
+
+      // Update the local state to reflect the saved content
+      setAvailableVersions(prev =>
+        prev.map(version =>
+          version.version_number === selectedVersionNumber
+            ? { ...version, content: currentDocumentContent }
+            : version
+        )
+      );
+
+      setIsDirty(false);
+      console.log(`Saved to version ${selectedVersionNumber}`);
     } catch (error) {
-      console.error("Error saving document:", error);
+      console.error("Error saving version:", error);
     }
     setIsLoading(false);
+  };
+
+  // Create a new version from current content
+  const createNewVersion = async () => {
+    setIsLoading(true);
+    try {
+      const response = await axios.post(`${BACKEND_URL}/document/${currentDocumentId}/versions`, {
+        content: currentDocumentContent,
+        name: `Version ${availableVersions.length + 1}`
+      });
+      const newVersion = response.data;
+
+      // Update the available versions list and switch to new version
+      setAvailableVersions(prev => [...prev, newVersion]);
+      setSelectedVersionNumber(newVersion.version_number);
+      setIsDirty(false);
+      console.log(`Created version ${newVersion.version_number}`);
+    } catch (error) {
+      console.error("Error creating new version:", error);
+    }
+    setIsLoading(false);
+  };
+
+  // Switch to a different version (Google Docs style)
+  const switchToVersion = async (versionNumber: number) => {
+    if (versionNumber === selectedVersionNumber) return; // No change needed
+
+    // Warn if there are unsaved changes
+    if (isDirty) {
+      const confirmSwitch = window.confirm(
+        "You have unsaved changes. Do you want to switch versions without saving? Your changes will be lost."
+      );
+      if (!confirmSwitch) return;
+    }
+
+    const version = availableVersions.find(v => v.version_number === versionNumber);
+    if (version) {
+      setSelectedVersionNumber(versionNumber);
+      setCurrentDocumentContent(version.content);
+      setIsDirty(false);
+      console.log(`Switched to version ${versionNumber}`);
+    }
+  };
+
+  // Handle content changes (mark as dirty)
+  const handleContentChange = (content: string) => {
+    setCurrentDocumentContent(content);
+    setIsDirty(true);
   };
 
   return (
@@ -60,14 +160,62 @@ function App() {
           <button onClick={() => loadPatent(2)}>Patent 2</button>
         </div>
         <div className="flex flex-col h-full items-center gap-2 px-4 flex-1">
-          <h2 className="self-start text-[#213547] opacity-60 text-2xl font-semibold">{`Patent ${currentDocumentId}`}</h2>
+          <div className="self-start flex items-center gap-4">
+            <h2 className="text-[#213547] opacity-60 text-2xl font-semibold">
+              {currentDocumentInfo?.title || `Patent ${currentDocumentId}`}
+              {isDirty && <span className="text-red-500 ml-2">*</span>}
+            </h2>
+            {availableVersions.length > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-600">Version:</span>
+                <select
+                  value={selectedVersionNumber}
+                  onChange={(e) => switchToVersion(Number(e.target.value))}
+                  className="border rounded px-2 py-1 text-sm"
+                >
+                  {availableVersions.map(version => (
+                    <option key={version.version_number} value={version.version_number}>
+                      {version.name || `v${version.version_number}`}
+                    </option>
+                  ))}
+                </select>
+                {isDirty && (
+                  <span className="text-xs text-red-500 ml-2">
+                    (unsaved changes)
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
           <Document
-            onContentChange={setCurrentDocumentContent}
+            onContentChange={handleContentChange}
             content={currentDocumentContent}
           />
         </div>
         <div className="flex flex-col h-full items-center gap-2 px-4">
-          <button onClick={() => savePatent(currentDocumentId)}>Save</button>
+          <button
+            onClick={saveCurrentVersion}
+            disabled={!isDirty || isLoading}
+            className={`px-4 py-2 rounded ${
+              isDirty && !isLoading
+                ? "bg-blue-500 hover:bg-blue-600 text-white"
+                : "bg-gray-300 text-gray-500 cursor-not-allowed"
+            }`}
+          >
+            {isDirty ? `Save v${selectedVersionNumber}` : `Saved`}
+          </button>
+          <button
+            onClick={createNewVersion}
+            disabled={isLoading}
+            className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:bg-gray-300 disabled:text-gray-500"
+          >
+            New Version
+          </button>
+          {availableVersions.length > 1 && (
+            <div className="text-xs text-gray-500 mt-2 text-center">
+              {availableVersions.length} versions available
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -1,21 +1,23 @@
 from pydantic import BaseModel, ConfigDict
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
 
 class DocumentBase(BaseModel):
-    content: str
+    title: str = "Untitled Patent"
 
 
 class DocumentRead(DocumentBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    current_version: int
+    # Removed: content field (eliminate duplication)
+    # Removed: current_version field (eliminate global state)
 
 
 class DocumentVersionBase(BaseModel):
     content: str
+    name: Optional[str] = None
 
 
 class DocumentVersionRead(DocumentVersionBase):
@@ -28,7 +30,13 @@ class DocumentVersionRead(DocumentVersionBase):
 
 
 class DocumentVersionCreate(BaseModel):
-    pass  # Will copy from current version
+    content: str
+    name: Optional[str] = None
+
+
+class DocumentVersionUpdate(BaseModel):
+    content: str
+    name: Optional[str] = None
 
 
 class DocumentVersionList(BaseModel):
