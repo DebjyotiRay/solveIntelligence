@@ -4,6 +4,8 @@ import axios from "axios";
 import LoadingOverlay from "./internal/LoadingOverlay";
 import Logo from "./assets/logo.png";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import SuggestionsPanel from "./components/SuggestionsPanel";
+import { useSocket } from "./hooks/useSocket";
 
 
 const BACKEND_URL = "http://localhost:8000";
@@ -31,6 +33,9 @@ function App() {
   const [availableVersions, setAvailableVersions] = useState<DocumentVersion[]>([]);
   const [isDirty, setIsDirty] = useState<boolean>(false);  // Has content been modified?
   const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  // WebSocket integration for AI suggestions
+  const { isConnected, isAnalyzing, aiSuggestions, requestAISuggestions } = useSocket();
 
   // Load the first patent on mount
   useEffect(() => {
@@ -148,74 +153,146 @@ function App() {
     setIsDirty(true);
   };
 
+  // Handle AI suggestion requests from Document component
+  const handleRequestSuggestions = (content: string) => {
+    if (isConnected) {
+      requestAISuggestions(content);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full w-full">
       {isLoading && <LoadingOverlay />}
       <header className="flex items-center justify-center top-0 w-full bg-black text-white text-center z-50 mb-[30px] h-[80px]">
         <img src={Logo} alt="Logo" style={{ height: "50px" }} />
       </header>
-      <div className="flex w-full bg-white h=[calc(100%-100px) gap-4 justify-center box-shadow">
-        <div className="flex flex-col h-full items-center gap-2 px-4">
-          <button onClick={() => loadPatent(1)}>Patent 1</button>
-          <button onClick={() => loadPatent(2)}>Patent 2</button>
-        </div>
-        <div className="flex flex-col h-full items-center gap-2 px-4 flex-1">
-          <div className="self-start flex items-center gap-4">
-            <h2 className="text-[#213547] opacity-60 text-2xl font-semibold">
-              {currentDocumentInfo?.title || `Patent ${currentDocumentId}`}
-              {isDirty && <span className="text-red-500 ml-2">*</span>}
-            </h2>
-            {availableVersions.length > 0 && (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-600">Version:</span>
-                <select
-                  value={selectedVersionNumber}
-                  onChange={(e) => switchToVersion(Number(e.target.value))}
-                  className="border rounded px-2 py-1 text-sm"
-                >
-                  {availableVersions.map(version => (
-                    <option key={version.version_number} value={version.version_number}>
-                      {version.name || `v${version.version_number}`}
-                    </option>
-                  ))}
-                </select>
-                {isDirty && (
-                  <span className="text-xs text-red-500 ml-2">
-                    (unsaved changes)
-                  </span>
-                )}
+      <div className="flex w-full bg-white h-[calc(100%-100px)] gap-4 justify-center">
+        {/* Left Sidebar - Document Selection & Controls */}
+        <div className="flex flex-col h-full items-center gap-4 px-4 w-48 bg-gray-50 border-r">
+          <div className="w-full space-y-2">
+            <button 
+              onClick={() => loadPatent(1)}
+              className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+            >
+              Patent 1
+            </button>
+            <button 
+              onClick={() => loadPatent(2)}
+              className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+            >
+              Patent 2
+            </button>
+          </div>
+
+          {/* Version Control */}
+          <div className="w-full space-y-2">
+            <button
+              onClick={saveCurrentVersion}
+              disabled={!isDirty || isLoading}
+              className={`w-full px-4 py-2 rounded text-sm ${
+                isDirty && !isLoading
+                  ? "bg-green-500 hover:bg-green-600 text-white"
+                  : "bg-gray-300 text-gray-500 cursor-not-allowed"
+              }`}
+            >
+              {isDirty ? `Save v${selectedVersionNumber}` : `Saved`}
+            </button>
+            <button
+              onClick={createNewVersion}
+              disabled={isLoading}
+              className="w-full px-4 py-2 bg-orange-500 text-white rounded hover:bg-orange-600 disabled:bg-gray-300 disabled:text-gray-500 text-sm"
+            >
+              New Version
+            </button>
+            {availableVersions.length > 1 && (
+              <div className="text-xs text-gray-500 text-center">
+                {availableVersions.length} versions available
               </div>
             )}
           </div>
-          <Document
-            onContentChange={handleContentChange}
-            content={currentDocumentContent}
-          />
+
+          {/* AI Analysis Button - Professional */}
+          <button
+            onClick={() => handleRequestSuggestions(currentDocumentContent)}
+            disabled={!isConnected || isLoading}
+            className="w-full px-4 py-3 bg-slate-800 text-white rounded border hover:bg-slate-700 disabled:bg-gray-300 disabled:text-gray-500 text-sm font-medium transition-colors"
+          >
+            AI Document Analysis
+          </button>
+
+          {/* Connection Status */}
+          <div className="flex items-center gap-2 text-sm">
+            <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+            <span className="text-gray-600 font-medium">
+              {isConnected ? 'AI Connected' : 'AI Offline'}
+            </span>
+          </div>
         </div>
-        <div className="flex flex-col h-full items-center gap-2 px-4">
-          <button
-            onClick={saveCurrentVersion}
-            disabled={!isDirty || isLoading}
-            className={`px-4 py-2 rounded ${
-              isDirty && !isLoading
-                ? "bg-blue-500 hover:bg-blue-600 text-white"
-                : "bg-gray-300 text-gray-500 cursor-not-allowed"
-            }`}
-          >
-            {isDirty ? `Save v${selectedVersionNumber}` : `Saved`}
-          </button>
-          <button
-            onClick={createNewVersion}
-            disabled={isLoading}
-            className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:bg-gray-300 disabled:text-gray-500"
-          >
-            New Version
-          </button>
-          {availableVersions.length > 1 && (
-            <div className="text-xs text-gray-500 mt-2 text-center">
-              {availableVersions.length} versions available
+
+        {/* Main Content Area - AI Analysis Takes Center Stage */}
+        <div className="flex-1 flex flex-col h-full">
+          {/* Top Header Bar */}
+          <div className="flex items-center justify-between p-4 bg-white border-b border-gray-200">
+            <div className="flex items-center gap-4">
+              <h2 className="text-[#213547] text-xl font-bold">
+                {currentDocumentInfo?.title || `Patent ${currentDocumentId}`}
+                {isDirty && <span className="text-red-500 ml-2">*</span>}
+              </h2>
+              {availableVersions.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600 font-medium">Version:</span>
+                  <select
+                    value={selectedVersionNumber}
+                    onChange={(e) => switchToVersion(Number(e.target.value))}
+                    className="border border-gray-300 rounded px-3 py-1 text-sm focus:ring-2 focus:ring-blue-500"
+                  >
+                    {availableVersions.map(version => (
+                      <option key={version.version_number} value={version.version_number}>
+                        {version.name || `v${version.version_number}`}
+                      </option>
+                    ))}
+                  </select>
+                  {isDirty && (
+                    <span className="text-xs text-red-500 ml-2 font-medium">
+                      (unsaved changes)
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
-          )}
+            
+            {/* Large Prominent AI Analysis Button */}
+            <button
+              onClick={() => handleRequestSuggestions(currentDocumentContent)}
+              disabled={!isConnected || isLoading}
+              className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:text-gray-500 text-base font-semibold shadow-lg transition-all"
+            >
+              {isAnalyzing ? 'Analyzing...' : 'Run AI Analysis'}
+            </button>
+          </div>
+
+          {/* Split Layout: Document + AI Analysis */}
+          <div className="flex-1 flex">
+            {/* Document Editor - Left 60% */}
+            <div className="w-3/5 h-full border-r border-gray-200">
+              <Document
+                onContentChange={handleContentChange}
+                content={currentDocumentContent}
+                onRequestSuggestions={handleRequestSuggestions}
+              />
+            </div>
+
+            {/* AI Analysis - Right 40% */}
+            <div className="w-2/5 h-full">
+              <SuggestionsPanel
+                currentDocumentId={currentDocumentId}
+                selectedVersionNumber={selectedVersionNumber}
+                isConnected={isConnected}
+                isAnalyzing={isAnalyzing}
+                aiSuggestions={aiSuggestions}
+              />
+            </div>
+          </div>
         </div>
       </div>
     </div>

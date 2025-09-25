@@ -1,44 +1,29 @@
 import Editor from "./internal/Editor";
-import useWebSocket from "react-use-websocket";
 import { debounce } from "lodash";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 
 export interface DocumentProps {
   onContentChange: (content: string) => void;
   content: string;
+  onRequestSuggestions?: (content: string) => void;
 }
 
-const SOCKET_URL = "ws://localhost:8000/ws";
-
-export default function Document({ onContentChange, content }: DocumentProps) {
-  const [messageHistory, setMessageHistory] = useState<MessageEvent[]>([]);
-
-  const { sendMessage, lastMessage } = useWebSocket(SOCKET_URL, {
-    onOpen: () => console.log("WebSocket Connected"),
-    onClose: () => console.log("WebSocket Disconnected"),
-    shouldReconnect: (_closeEvent) => true,
-    // Optionally, you can configure WebSocket options here
-  });
-
-  useEffect(() => {
-    if (lastMessage !== null) {
-      setMessageHistory((prev) => prev.concat(lastMessage));
-      // Handle the incoming message as needed. For example, update the editor content or display suggestions.
-      console.log(lastMessage.data);
-    }
-  }, [lastMessage, setMessageHistory]);
-
-  // Debounce editor content changes
-  const sendEditorContent = useCallback(
+export default function Document({ onContentChange, content, onRequestSuggestions }: DocumentProps) {
+  // Debounce AI suggestion requests to avoid spamming
+  const requestSuggestions = useCallback(
     debounce((content: string) => {
-      sendMessage(content);
-    }, 500), // Adjust debounce time as needed
-    [sendMessage]
+      if (onRequestSuggestions && content.trim().length > 50) {
+        onRequestSuggestions(content);
+      }
+    }, 2000), // Wait 2 seconds after user stops typing
+    [onRequestSuggestions]
   );
 
   const handleEditorChange = (content: string) => {
     onContentChange(content);
-    sendEditorContent(content);
+
+    // Automatically request AI suggestions after content changes
+    requestSuggestions(content);
   };
 
   return (

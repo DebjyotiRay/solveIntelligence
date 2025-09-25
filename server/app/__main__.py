@@ -4,11 +4,9 @@ from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconn
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import insert, select, update, func
 from sqlalchemy.orm import Session
-
 from app.internal.ai import AI, get_ai
 from app.internal.data import DOCUMENT_1, DOCUMENT_2
 from app.internal.db import Base, SessionLocal, engine, get_db
-
 import app.models as models
 import app.schemas as schemas
 
@@ -42,8 +40,10 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(lifespan=lifespan)
-app.add_middleware(
+fastapi_app = FastAPI(lifespan=lifespan)
+
+# Add CORS middleware
+fastapi_app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
@@ -54,7 +54,7 @@ app.add_middleware(
 
 # Document Management API Endpoints
 
-@app.get("/document/{document_id}", response_model=schemas.DocumentRead)
+@fastapi_app.get("/document/{document_id}", response_model=schemas.DocumentRead)
 def get_document(document_id: int, db: Session = Depends(get_db)):
     """Get document metadata (stateless - no content)"""
     doc = db.scalar(select(models.Document).where(models.Document.id == document_id))
@@ -65,7 +65,7 @@ def get_document(document_id: int, db: Session = Depends(get_db)):
 
 # Version Management API Endpoints (Clean Stateless Architecture)
 
-@app.get("/document/{document_id}/versions", response_model=schemas.DocumentVersionList)
+@fastapi_app.get("/document/{document_id}/versions", response_model=schemas.DocumentVersionList)
 def get_document_versions(document_id: int, db: Session = Depends(get_db)):
     """Get all versions of a document"""
     # Check if document exists
@@ -82,7 +82,7 @@ def get_document_versions(document_id: int, db: Session = Depends(get_db)):
     return schemas.DocumentVersionList(versions=versions)
 
 
-@app.get("/document/{document_id}/versions/{version_number}", response_model=schemas.DocumentVersionRead)
+@fastapi_app.get("/document/{document_id}/versions/{version_number}", response_model=schemas.DocumentVersionRead)
 def get_document_version(document_id: int, version_number: int, db: Session = Depends(get_db)):
     """Get a specific version of a document"""
     version = db.scalar(
@@ -100,7 +100,7 @@ def get_document_version(document_id: int, version_number: int, db: Session = De
     return version
 
 
-@app.post("/document/{document_id}/versions", response_model=schemas.DocumentVersionRead)
+@fastapi_app.post("/document/{document_id}/versions", response_model=schemas.DocumentVersionRead)
 def create_document_version(
     document_id: int,
     version_data: schemas.DocumentVersionCreate,
@@ -137,7 +137,7 @@ def create_document_version(
     return new_version
 
 
-@app.put("/document/{document_id}/versions/{version_number}", response_model=schemas.DocumentVersionRead)
+@fastapi_app.put("/document/{document_id}/versions/{version_number}", response_model=schemas.DocumentVersionRead)
 def update_document_version(
     document_id: int,
     version_number: int,
@@ -176,7 +176,7 @@ def update_document_version(
     return version
 
 
-@app.delete("/document/{document_id}/versions/{version_number}")
+@fastapi_app.delete("/document/{document_id}/versions/{version_number}")
 def delete_document_version(document_id: int, version_number: int, db: Session = Depends(get_db)):
     """Delete a specific version (optional feature)"""
 
@@ -213,7 +213,7 @@ def delete_document_version(document_id: int, version_number: int, db: Session =
 
 # Legacy API Endpoints (for backward compatibility during transition)
 
-@app.get("/document/{document_id}/content")
+@fastapi_app.get("/document/{document_id}/content")
 def get_document_content_legacy(document_id: int, db: Session = Depends(get_db)):
     """Legacy endpoint: Get latest version content for backward compatibility"""
     # Get latest version
@@ -234,26 +234,40 @@ def get_document_content_legacy(document_id: int, db: Session = Depends(get_db))
     }
 
 
-@app.post("/save/{document_id}")
+@fastapi_app.post("/save/{document_id}")
 def save_legacy(document_id: int, document: schemas.DocumentVersionCreate, db: Session = Depends(get_db)):
     """Legacy endpoint: Save as new version for backward compatibility"""
     return create_document_version(document_id, document, db)
 
 
-@app.websocket("/ws")
-async def websocket(websocket: WebSocket, ai: AI = Depends(get_ai)):
+@fastapi_app.websocket("/ws")
+async def websocket_ai_suggestions(websocket: WebSocket, ai: AI = Depends(get_ai)):
     await websocket.accept()
+    print("WebSocket connected for AI suggestions")
+    
     while True:
         try:
-            """
-            The AI doesn't expect to receive any HTML.
-            You can call ai.review_document to receive suggestions from the LLM.
-            Remember, the output from the LLM will not be deterministic, so you may want to validate the output before sending it to the client.
-            """
-            document = await websocket.receive_text()
-            print("Received data via websocket")
+            # Receive document content from client
+            document_html = await websocket.receive_text()
+            print(f"Received document: {len(document_html)} chars")
+            
+            # Process content for AI
+            from app.internal.ai_utils import prepare_content_for_ai
+            ai_input = prepare_content_for_ai(document_html)
+            
+            if not ai_input["has_content"]:
+                await websocket.send_text("No content to analyze")
+                continue
+                
+            # Stream AI suggestions back to client  
+            async for chunk in ai.review_document(ai_input["clean_text"]):
+                if chunk:
+                    await websocket.send_text(chunk)
+            
         except WebSocketDisconnect:
             break
         except Exception as e:
-            print(f"Error occurred: {e}")
-            continue
+            await websocket.send_text(f"Error: {str(e)}")
+
+# Export the FastAPI app directly (Socket.IO removed)
+app = fastapi_app
