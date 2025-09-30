@@ -3,9 +3,9 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import LoadingOverlay from "./internal/LoadingOverlay";
 import Logo from "./assets/logo.png";
-import { useMutation, useQuery } from "@tanstack/react-query";
 import SuggestionsPanel from "./components/SuggestionsPanel";
 import { useSocket } from "./hooks/useSocket";
+import { findSuggestionPosition, generateSuggestionId } from "./utils/suggestionUtils";
 
 
 const BACKEND_URL = "http://localhost:8000";
@@ -24,6 +24,33 @@ interface DocumentInfo {
   title: string;
 }
 
+interface PatentIssue {
+  type: string;
+  severity: 'high' | 'medium' | 'low';
+  paragraph?: number;
+  description: string;
+  suggestion: string;
+  target?: {
+    text?: string;           
+    position?: number;       
+    pattern?: string;        
+    context?: string;        
+  };
+  replacement?: {
+    type: 'add' | 'replace' | 'insert';
+    text: string;           
+    position?: 'before' | 'after' | 'replace';
+  };
+}
+
+interface PanelSuggestion {
+  issue: PatentIssue;
+  position: number;
+  originalText: string;
+  replacementText: string;
+  type: 'add' | 'replace' | 'insert';
+}
+
 function App() {
   // Stateless frontend state management
   const [currentDocumentContent, setCurrentDocumentContent] = useState<string>("");
@@ -34,8 +61,25 @@ function App() {
   const [isDirty, setIsDirty] = useState<boolean>(false);  // Has content been modified?
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  // WebSocket integration for AI suggestions
-  const { isConnected, isAnalyzing, aiSuggestions, requestAISuggestions } = useSocket();
+  // Panel suggestion state
+  const [activePanelSuggestion, setActivePanelSuggestion] = useState<PanelSuggestion | null>(null);
+  const [activeSuggestionId, setActiveSuggestionId] = useState<string>('');
+  const [appliedSuggestionIds, setAppliedSuggestionIds] = useState<Set<string>>(new Set());
+  const [acceptedSuggestionIds, setAcceptedSuggestionIds] = useState<Set<string>>(new Set());
+
+  // WebSocket integration for AI suggestions with multi-agent streaming
+  const {
+    isConnected,
+    isAnalyzing,
+    analysisResult,
+    requestAISuggestions,
+    currentPhase,
+    streamUpdates,
+    requestInlineSuggestion,
+    pendingSuggestion,
+    acceptInlineSuggestion,
+    rejectInlineSuggestion
+  } = useSocket();
 
   // Load the first patent on mount
   useEffect(() => {
@@ -160,6 +204,79 @@ function App() {
     }
   };
 
+  // Handle applying panel suggestions
+  const handleApplySuggestion = (issue: PatentIssue, index: number) => {
+    console.log('🎯 Applying panel suggestion:', issue.type);
+    
+    // Clear any existing panel suggestion
+    setActivePanelSuggestion(null);
+    setActiveSuggestionId('');
+    
+    // Find position in editor using suggestion utils
+    const location = findSuggestionPosition(issue, currentDocumentContent);
+    
+    if (location) {
+      const suggestionId = generateSuggestionId(issue, index);
+      
+      const panelSuggestion: PanelSuggestion = {
+        issue,
+        position: location.position,
+        originalText: location.originalText,
+        replacementText: location.replacementText,
+        type: location.type
+      };
+      
+      setActivePanelSuggestion(panelSuggestion);
+      setActiveSuggestionId(suggestionId);
+      
+      // Mark this suggestion as applied (hides Apply button)
+      setAppliedSuggestionIds(prev => new Set(prev).add(suggestionId));
+      
+      console.log('✅ Panel suggestion activated:', panelSuggestion);
+    } else {
+      // Show error - couldn't locate where to apply
+      alert('Could not locate where to apply this suggestion in the document.');
+    }
+  };
+
+  // Handle accepting panel suggestions
+  const handleAcceptPanelSuggestion = () => {
+    console.log('✅ Panel suggestion accepted');
+    
+    if (activeSuggestionId) {
+      // Mark as accepted to permanently hide from panel
+      setAcceptedSuggestionIds(prev => new Set(prev).add(activeSuggestionId));
+      
+      // Remove from applied suggestions (cleanup)
+      setAppliedSuggestionIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(activeSuggestionId);
+        return newSet;
+      });
+    }
+    
+    setActivePanelSuggestion(null);
+    setActiveSuggestionId('');
+    // Note: The actual text modification is handled by the Editor component
+  };
+
+  // Handle rejecting panel suggestions
+  const handleRejectPanelSuggestion = () => {
+    console.log('❌ Panel suggestion rejected');
+    
+    if (activeSuggestionId) {
+      // Remove from applied suggestions to restore Apply button
+      setAppliedSuggestionIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(activeSuggestionId);
+        return newSet;
+      });
+    }
+    
+    setActivePanelSuggestion(null);
+    setActiveSuggestionId('');
+  };
+
   return (
     <div className="flex flex-col h-full w-full">
       {isLoading && <LoadingOverlay />}
@@ -272,24 +389,36 @@ function App() {
           </div>
 
           {/* Split Layout: Document + AI Analysis */}
-          <div className="flex-1 flex">
+          <div className="flex-1 flex overflow-hidden">
             {/* Document Editor - Left 60% */}
             <div className="w-3/5 h-full border-r border-gray-200">
               <Document
                 onContentChange={handleContentChange}
                 content={currentDocumentContent}
-                onRequestSuggestions={handleRequestSuggestions}
+                onInlineSuggestionRequest={requestInlineSuggestion}
+                pendingSuggestion={pendingSuggestion}
+                onAcceptSuggestion={acceptInlineSuggestion}
+                onRejectSuggestion={rejectInlineSuggestion}
+                activePanelSuggestion={activePanelSuggestion}
+                onAcceptPanelSuggestion={handleAcceptPanelSuggestion}
+                onRejectPanelSuggestion={handleRejectPanelSuggestion}
               />
             </div>
 
-            {/* AI Analysis - Right 40% */}
-            <div className="w-2/5 h-full">
+            {/* AI Analysis - Right 40% - Fixed scrolling */}
+            <div className="w-2/5 h-full flex flex-col">
               <SuggestionsPanel
                 currentDocumentId={currentDocumentId}
                 selectedVersionNumber={selectedVersionNumber}
                 isConnected={isConnected}
                 isAnalyzing={isAnalyzing}
-                aiSuggestions={aiSuggestions}
+                analysisResult={analysisResult}
+                currentPhase={currentPhase}
+                streamUpdates={streamUpdates}
+                onApplySuggestion={handleApplySuggestion}
+                activeSuggestionId={activeSuggestionId}
+                appliedSuggestionIds={appliedSuggestionIds}
+                acceptedSuggestionIds={acceptedSuggestionIds}
               />
             </div>
           </div>

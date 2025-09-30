@@ -6,8 +6,6 @@ services:
       - "8000:8000"
     volumes:
       - ./server:/app
-    env_file:
-      - ./server/.env
 
   client:
     container_name: EngineeringChallenge_Client
