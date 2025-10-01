@@ -18,68 +18,6 @@ import app.schemas as schemas
 USE_MULTI_AGENT_SYSTEM = os.getenv("USE_MULTI_AGENT_SYSTEM", "false").lower() == "true"
 
 
-def calculate_content_similarity(content1: str, content2: str) -> float:
-    """Calculate similarity score between two document contents"""
-    try:
-        # Extract key features from both contents
-        from bs4 import BeautifulSoup
-        import re
-        
-        def extract_features(html_content):
-            soup = BeautifulSoup(html_content, 'html.parser')
-            
-            # Extract title
-            title_elem = soup.find('title') or soup.find('h1')
-            title = title_elem.get_text().strip() if title_elem else ""
-            
-            # Extract first claim (look for "1." pattern)
-            text = soup.get_text()
-            first_claim_match = re.search(r'1\.\s+([^\.]+(?:\.[^\.]*){0,3})', text)
-            first_claim = first_claim_match.group(1)[:200] if first_claim_match else ""
-            
-            # Extract key technical terms
-            words = re.findall(r'\b[a-z]{4,}\b', text.lower())
-            key_terms = list(set([w for w in words if len(w) > 4]))[:20]  # Top 20 terms
-            
-            return {
-                "title": title.lower(),
-                "first_claim": first_claim.lower(),
-                "key_terms": set(key_terms)
-            }
-        
-        features1 = extract_features(content1)
-        features2 = extract_features(content2)
-        
-        # Calculate weighted similarity
-        title_sim = 0.0
-        if features1["title"] and features2["title"]:
-            # Simple word overlap for title
-            words1 = set(features1["title"].split())
-            words2 = set(features2["title"].split())
-            if words1 or words2:
-                title_sim = len(words1 & words2) / max(len(words1 | words2), 1)
-        
-        claim_sim = 0.0
-        if features1["first_claim"] and features2["first_claim"]:
-            # Simple word overlap for first claim
-            words1 = set(features1["first_claim"].split())
-            words2 = set(features2["first_claim"].split())
-            if words1 or words2:
-                claim_sim = len(words1 & words2) / max(len(words1 | words2), 1)
-        
-        term_sim = 0.0
-        if features1["key_terms"] or features2["key_terms"]:
-            term_sim = len(features1["key_terms"] & features2["key_terms"]) / max(len(features1["key_terms"] | features2["key_terms"]), 1)
-        
-        # Weighted average (title: 40%, claim: 35%, terms: 25%)
-        final_score = (title_sim * 0.4) + (claim_sim * 0.35) + (term_sim * 0.25)
-        return final_score
-        
-    except Exception as e:
-        print(f"⚠️ Similarity calculation error: {e}")
-        return 0.0
-
-
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     # Create the database tables
@@ -416,35 +354,29 @@ async def _websocket_multi_agent_analysis(websocket: WebSocket):
                 await websocket.send_text(json.dumps({"error": "No content to analyze"}))
                 continue
 
-            # Try to find matching document using simple content similarity
+            # Handle document_id: required for JSON format, optional for legacy format
             document_id = None
+            if 'parsed_message' in locals():
+                # JSON format - document_id should be provided
+                document_id = parsed_message.get("document_id")
+                if not document_id:
+                    await websocket.send_text(json.dumps({
+                        "error": "document_id required in JSON message format"
+                    }))
+                    continue
+            else:
+                # Legacy format - we'll create a new document or use document ID "1" as fallback
+                document_id = "1"  # Default to document 1 for legacy format
+
             document_title = None
-            
+            print(f"📄 WEBSOCKET: Using document_id: {document_id}")
+
             with SessionLocal() as db:
-                documents = db.scalars(select(models.Document)).all()
-                print(f"🔍 SIMILARITY CHECK: Found {len(documents)} documents in database")
-                
-                best_match = None
-                highest_score = 0.0
-                
-                for doc in documents:
-                    if doc.content:
-                        # Simple similarity scoring
-                        similarity_score = calculate_content_similarity(document_html, doc.content)
-                        print(f"🔍 SIMILARITY: Doc ID={doc.id}, Title='{doc.title}', Score={similarity_score:.3f}")
-                        
-                        if similarity_score > highest_score and similarity_score > 0.7:  # 70% threshold
-                            highest_score = similarity_score
-                            best_match = doc
-                
-                if best_match:
-                    # Found existing document - use its ID
-                    document_id = str(best_match.id)
-                    document_title = best_match.title
-                    print(f"✅ MATCHED: Found similar document ID={document_id}, Title='{document_title}', Score={highest_score:.3f}")
+                doc = db.get(models.Document, int(document_id))
+                if doc:
+                    document_title = doc.title
                 else:
-                    # No match found - create new document entry
-                    # Extract title from HTML content
+                    # Document doesn't exist - create it
                     from bs4 import BeautifulSoup
                     try:
                         soup = BeautifulSoup(document_html, 'html.parser')
@@ -452,8 +384,7 @@ async def _websocket_multi_agent_analysis(websocket: WebSocket):
                         extracted_title = title_element.get_text().strip()[:100] if title_element else "New Patent Document"
                     except:
                         extracted_title = "New Patent Document"
-                    
-                    # Create new document in database
+
                     new_doc = models.Document(
                         title=extracted_title,
                         content=document_html,
@@ -462,7 +393,7 @@ async def _websocket_multi_agent_analysis(websocket: WebSocket):
                     db.add(new_doc)
                     db.commit()
                     db.refresh(new_doc)
-                    
+
                     document_id = str(new_doc.id)
                     document_title = new_doc.title
                     print(f"🆕 NEW DOCUMENT: Created ID={document_id}, Title='{document_title}'")

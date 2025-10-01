@@ -1,6 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { generateSuggestionId } from '../utils/suggestionUtils';
 
+// Constants
+const SYSTEM_TYPES = {
+  ORIGINAL_AI: 'original_ai',
+  MULTI_AGENT: 'multi_agent_v2.0',
+} as const;
+
+const SEVERITY_COLORS = {
+  high: 'bg-red-100 text-red-800 border-red-200',
+  medium: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+  low: 'bg-green-100 text-green-800 border-green-200',
+  default: 'bg-gray-100 text-gray-800 border-gray-200',
+} as const;
+
+const SCORE_COLORS = {
+  good: 'bg-green-100 text-green-800',
+  medium: 'bg-yellow-100 text-yellow-800',
+  poor: 'bg-red-100 text-red-800',
+} as const;
+
 interface PatentIssue {
   type: string;
   severity: 'high' | 'medium' | 'low';
@@ -94,14 +113,29 @@ const SuggestionsPanel: React.FC<SuggestionsPanelProps> = ({
     }
   }, [analysisResult]);
 
-  // Get severity color for badges
-  const getSeverityColor = (severity: 'high' | 'medium' | 'low') => {
-    switch (severity) {
-      case 'high': return 'bg-red-100 text-red-800 border-red-200';
-      case 'medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'low': return 'bg-green-100 text-green-800 border-green-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
+  // Helper functions for better maintainability
+  const getSeverityColor = (severity: 'high' | 'medium' | 'low'): string => {
+    return SEVERITY_COLORS[severity] || SEVERITY_COLORS.default;
+  };
+
+  const getScoreColor = (score: number): string => {
+    if (score >= 0.8) return SCORE_COLORS.good;
+    if (score >= 0.6) return SCORE_COLORS.medium;
+    return SCORE_COLORS.poor;
+  };
+
+  const getAnalysisTitle = (systemType?: string): string => {
+    return systemType === SYSTEM_TYPES.ORIGINAL_AI 
+      ? "Single-Agent Analysis Results" 
+      : "Multi-Agent Analysis Results";
+  };
+
+  const formatSystemType = (systemType: string): string => {
+    return systemType.toUpperCase().replace('_', ' ');
+  };
+
+  const formatPhase = (phase: string): string => {
+    return phase.replace('_', ' ').toUpperCase();
   };
 
   // Group issues by severity
@@ -167,7 +201,7 @@ const SuggestionsPanel: React.FC<SuggestionsPanelProps> = ({
                 <div className="flex items-center gap-3 mb-2">
                   <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-300 border-t-blue-600"></div>
                   <div className="text-blue-900 font-semibold text-sm">
-                    🤖 {analysisResult.system_type.toUpperCase().replace('_', ' ')} ACTIVE
+                    🤖 {formatSystemType(analysisResult.system_type)} ACTIVE
                   </div>
                 </div>
                 {analysisResult.workflow && (
@@ -190,7 +224,7 @@ const SuggestionsPanel: React.FC<SuggestionsPanelProps> = ({
                   <div className="animate-pulse w-2 h-2 rounded-full bg-orange-500"></div>
                   <div>
                     <div className="text-slate-800 font-medium text-sm">
-                      Current Phase: {currentPhase.replace('_', ' ').toUpperCase()}
+                      Current Phase: {formatPhase(currentPhase)}
                     </div>
                     <div className="text-slate-600 text-xs">
                       {analysisResult?.message || 'Processing...'}
@@ -246,10 +280,12 @@ const SuggestionsPanel: React.FC<SuggestionsPanelProps> = ({
         {/* Structured Issues Display */}
         {analysisResult?.status === 'complete' && issues.length > 0 && (
           <div className="p-6">
-            {/* Multi-Agent Results Header */}
+            {/* Analysis Results Header */}
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h4 className="text-lg font-bold text-slate-800">Multi-Agent Analysis Results</h4>
+                <h4 className="text-lg font-bold text-slate-800">
+                  {getAnalysisTitle(analysisResult?.system_type)}
+                </h4>
                 {analysisResult.agents_used && (
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-xs text-slate-600">Analyzed by:</span>
@@ -268,11 +304,7 @@ const SuggestionsPanel: React.FC<SuggestionsPanelProps> = ({
                 {analysisResult.overall_score !== undefined && (
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-slate-600">Overall Score:</span>
-                    <span className={`px-2 py-1 text-xs font-semibold rounded ${
-                      analysisResult.overall_score >= 0.8 ? 'bg-green-100 text-green-800' :
-                      analysisResult.overall_score >= 0.6 ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-red-100 text-red-800'
-                    }`}>
+                    <span className={`px-2 py-1 text-xs font-semibold rounded ${getScoreColor(analysisResult.overall_score)}`}>
                       {(analysisResult.overall_score * 100).toFixed(0)}%
                     </span>
                   </div>

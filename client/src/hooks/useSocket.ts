@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 
 interface PatentIssue {
   type: string;
@@ -154,42 +155,45 @@ export const useSocket = (): UseWebSocketReturn => {
         if (response.status === 'analyzing') {
           console.log('🔄 Processing analyzing message - Phase:', response.phase, 'Agent:', response.agent);
           
-          // Handle streaming updates
-          setIsAnalyzing(true);
-          
-          // Update current phase if provided
-          if (response.phase) {
-            console.log('📍 Setting current phase:', response.phase);
-            setCurrentPhase(response.phase);
-          }
-          
-          // Add to stream updates for progress display - ALWAYS add if message exists
-          if (response.message) {
-            const streamUpdate: StreamUpdate = {
-              status: 'analyzing',
-              phase: response.phase,
-              agent: response.agent,
-              message: response.message || '',
-              system_type: response.system_type,
-              workflow: response.workflow,
-              agents: response.agents,
-              memory_enabled: response.memory_enabled,
-              orchestrator: response.orchestrator
-            };
+          // Use flushSync for immediate UI updates to prevent React batching delays
+          flushSync(() => {
+            // Handle streaming updates
+            setIsAnalyzing(true);
             
-            console.log('📋 Adding stream update:', streamUpdate);
-            setStreamUpdates(prev => {
-              const newUpdates = [...prev, streamUpdate];
-              console.log('📋 Total stream updates now:', newUpdates.length);
-              return newUpdates;
-            });
-          } else {
-            console.log('⚠️ Analyzing message has no message content - skipping stream update');
-          }
-          
-          // Keep the latest analyzing message as the current result
-          setAnalysisResult(response);
-          console.log('📊 Updated analysis result with analyzing status');
+            // Update current phase if provided
+            if (response.phase) {
+              console.log('📍 Setting current phase:', response.phase);
+              setCurrentPhase(response.phase);
+            }
+            
+            // Add to stream updates for progress display - ALWAYS add if message exists
+            if (response.message) {
+              const streamUpdate: StreamUpdate = {
+                status: 'analyzing',
+                phase: response.phase,
+                agent: response.agent,
+                message: response.message || '',
+                system_type: response.system_type,
+                workflow: response.workflow,
+                agents: response.agents,
+                memory_enabled: response.memory_enabled,
+                orchestrator: response.orchestrator
+              };
+              
+              console.log('📋 Adding stream update:', streamUpdate);
+              setStreamUpdates(prev => {
+                const newUpdates = [...prev, streamUpdate];
+                console.log('📋 Total stream updates now:', newUpdates.length);
+                return newUpdates;
+              });
+            } else {
+              console.log('⚠️ Analyzing message has no message content - skipping stream update');
+            }
+            
+            // Keep the latest analyzing message as the current result
+            setAnalysisResult(response);
+            console.log('📊 Updated analysis result with analyzing status');
+          });
           
         } else if (response.status === 'complete') {
           // Handle final results
@@ -216,7 +220,7 @@ export const useSocket = (): UseWebSocketReturn => {
           console.error('❌ Multi-agent analysis error:', response.error);
         } else if (response.status === 'streaming') {
           // Handle legacy streaming messages
-          const streamingResponse = response as any; // Type assertion for legacy messages
+          const streamingResponse = response as AnalysisResult & { message: string }; // Type assertion for legacy messages
           console.log('🔄 Processing legacy streaming message:', streamingResponse.message);
           const streamUpdate: StreamUpdate = {
             status: 'analyzing',

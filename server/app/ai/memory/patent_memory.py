@@ -73,7 +73,6 @@ class PatentAnalysisMemory:
         try:
             # Create summary text for semantic search
             summary = self._create_findings_summary(agent_name, findings)
-            print(f"🔍 STORING: Agent {agent_name} with summary: {summary[:100]}...")
 
             # Store findings using correct Mem0 API format with unique user_id per agent
             unique_user_id = f"{document_id}_{agent_name}"  # Unique user_id to prevent deduplication
@@ -94,27 +93,10 @@ class PatentAnalysisMemory:
             )
 
             logger.info(f"Stored findings for agent {agent_name} on document {document_id}")
-            print(f"✅ STORED: Agent {agent_name} findings stored successfully")
-
-            # Immediately check what's stored - verify this specific agent's storage
-            try:
-                agent_results = self.memory.get_all(user_id=unique_user_id)
-                print(f"🔍 VERIFICATION: Agent {agent_name} has {len(agent_results)} stored entries")
-                if agent_results and len(agent_results) > 0:
-                    result = agent_results[0]  # Get first (should be latest)
-                    if isinstance(result, dict) and 'metadata' in result:
-                        stored_confidence = result.get('metadata', {}).get('confidence', 'N/A')
-                        print(f"   ✅ Verified {agent_name} storage - confidence: {stored_confidence}")
-                    else:
-                        print(f"   ⚠️ Unexpected result format: {type(result)}")
-            except Exception as ve:
-                print(f"⚠️ VERIFICATION: Could not verify {agent_name} storage: {ve}")
-
             return True
 
         except Exception as e:
             logger.error(f"Failed to store agent findings: {e}")
-            print(f"❌ STORAGE ERROR: {e}")
             return False
 
     def get_shared_analysis_context(
@@ -123,7 +105,6 @@ class PatentAnalysisMemory:
         requesting_agent: Optional[str] = None
     ) -> Dict[str, Any]:
         """Get all analysis context from shared memory for current workflow"""
-        print(f"📚 SHARED MEMORY: Getting analysis context for document {document_id}, requesting agent: {requesting_agent}")
         try:
             # Get all memories for this document - try multiple approaches
             results = []
@@ -139,15 +120,8 @@ class PatentAnalysisMemory:
                         results.extend(agent_results)
                     except:
                         continue  # Agent hasn't stored findings yet
-                print(f"📚 SHARED MEMORY: Found {len(results)} entries for document {document_id}")
             except Exception as e:
-                print(f"📚 SHARED MEMORY: get_all() failed: {e}")
-
-            # Since we're using unique user_ids per agent, we must rely on get_all()
-            if not results:
-                print(f"📚 SHARED MEMORY: No results found for document {document_id} - this may be normal for new documents")
-
-            print(f"📚 SHARED MEMORY: Found {len(results) if hasattr(results, '__len__') else 'unknown'} memory entries")
+                logger.debug(f"Memory retrieval failed: {e}")
 
             # Extract findings from metadata (not JSON parsing)
             context = {
@@ -159,41 +133,29 @@ class PatentAnalysisMemory:
 
             for i, result in enumerate(results):
                 try:
-                    print(f"📚 SHARED MEMORY: Processing result {i+1}: {type(result)}")
-                    
                     # Handle Mem0 response format (dict with metadata key)
                     if isinstance(result, dict) and 'metadata' in result:
                         metadata = result['metadata']
-                        print(f"📚 SHARED MEMORY: Result {i+1} metadata type: {metadata.get('type', 'unknown')}")
 
                         if metadata and metadata.get('type') == 'agent_findings':
                             agent = metadata.get('agent')
                             findings_json = metadata.get('findings', '{}')
-                            print(f"📚 SHARED MEMORY: Found {agent} findings, JSON type: {type(findings_json)}")
 
                             if agent and findings_json:
                                 try:
                                     # Parse JSON string back to dict object for v1.0.0b0
                                     if isinstance(findings_json, str):
-                                        print(f"📚 SHARED MEMORY: Parsing JSON string for {agent}")
                                         findings = json.loads(findings_json)
                                     else:
-                                        print(f"📚 SHARED MEMORY: Using raw findings for {agent}")
                                         findings = findings_json
-                                    
-                                    print(f"📚 SHARED MEMORY: Parsed {agent} findings: {type(findings)}, keys: {list(findings.keys()) if isinstance(findings, dict) else 'N/A'}")
+
                                     context['agent_findings'][agent] = findings
-                                    print(f"📚 SHARED MEMORY: ✅ Retrieved {agent} findings - confidence: {findings.get('confidence', 'N/A')}")
-                                    print(f"📚 SHARED MEMORY: ✅ {agent} findings has {len(findings.get('issues', []))} issues")
+                                    logger.debug(f"Retrieved {agent} findings with {len(findings.get('issues', []))} issues")
                                 except (json.JSONDecodeError, TypeError) as e:
-                                    print(f"⚠️ SHARED MEMORY: Failed to parse {agent} findings JSON: {e}")
-                                    print(f"⚠️ SHARED MEMORY: Raw findings_json type: {type(findings_json)}, value: {str(findings_json)[:100]}")
+                                    logger.warning(f"Failed to parse {agent} findings: {e}")
                                     continue
-                    else:
-                        print(f"📚 SHARED MEMORY: Result {i+1} unexpected format: {result}")
 
                 except Exception as e:
-                    print(f"⚠️ SHARED MEMORY: Error processing result {i+1}: {e}")
                     logger.warning(f"Failed to extract findings from memory entry: {e}")
                     continue
 
@@ -263,9 +225,9 @@ class PatentAnalysisMemory:
                     if any(term.lower() in content for term in search_terms) or not search_terms:
                         results.append(result)
 
-                print(f"🔍 SIMILAR CASES: Found {len(results)} matching global memories")
+                logger.debug(f"Found {len(results)} similar cases from global memory")
             except Exception as e:
-                print(f"🔍 SIMILAR CASES: get_all() failed, using search fallback: {e}")
+                logger.debug(f"Global memory retrieval failed, using search: {e}")
                 results = self.memory.search(
                     query=query,
                     user_id="global_memory",  # Search in global memory
@@ -280,6 +242,11 @@ class PatentAnalysisMemory:
                         metadata = result['metadata']
                         if metadata and metadata.get('type') == 'analysis_summary':
                             analysis_summary = metadata.get('analysis_summary', {})
+
+                            # FIX: Parse JSON string back to dict (was stored as json.dumps)
+                            if isinstance(analysis_summary, str):
+                                analysis_summary = json.loads(analysis_summary)
+
                             if analysis_summary:
                                 similar_cases.append(analysis_summary)
                 except Exception as e:
@@ -416,9 +383,9 @@ class PatentAnalysisMemory:
                             metadata.get('agent') == agent_name):
                             patterns.append(result)
 
-                print(f"🔧 PATTERNS: Found {len(patterns)} correction patterns for {agent_name}")
+                logger.debug(f"Found {len(patterns)} correction patterns for {agent_name}")
             except Exception as e:
-                print(f"🔧 PATTERNS: get_all() failed, using search fallback: {e}")
+                logger.debug(f"Pattern retrieval failed, using search: {e}")
                 patterns = self.memory.search(
                     query=f"correction pattern {agent_name}",
                     user_id="global_memory",
@@ -567,9 +534,9 @@ class PatentAnalysisMemory:
                     except Exception as e:
                         continue
 
-                print(f"📊 PROGRESS: Found {len(progress['completed_agents'])} completed agents")
+                logger.debug(f"Workflow progress: {len(progress['completed_agents'])} agents completed")
             except Exception as e:
-                print(f"📊 PROGRESS: get_all() failed, using search fallback: {e}")
+                logger.debug(f"Progress retrieval failed: {e}")
                 results = self.memory.search(
                     query="agent findings",
                     user_id=document_id,
