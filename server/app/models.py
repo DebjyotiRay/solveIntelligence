@@ -7,8 +7,6 @@ class Document(Base):
     __tablename__ = "document"
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, default="Untitled Patent")
-    # Keep content temporarily for safe migration
-    content = Column(String)
     current_version = Column(Integer, default=1)
 
 
