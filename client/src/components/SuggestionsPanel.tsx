@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { generateSuggestionId } from '../utils/suggestionUtils';
+import { PatentIssue, AnalysisResult, StreamUpdate } from '../types/PatentTypes';
 
-// Constants
 const SYSTEM_TYPES = {
   ORIGINAL_AI: 'original_ai',
   MULTI_AGENT: 'multi_agent_v2.0',
@@ -20,61 +19,6 @@ const SCORE_COLORS = {
   poor: 'bg-red-100 text-red-800',
 } as const;
 
-interface PatentIssue {
-  type: string;
-  severity: 'high' | 'medium' | 'low';
-  paragraph?: number;
-  description: string;
-  suggestion: string;
-  // Enhanced for apply functionality
-  target?: {
-    text?: string;           // Specific text to find
-    position?: number;       // Exact character position if known
-    pattern?: string;        // Regex pattern to match
-    context?: string;        // Surrounding context
-  };
-  replacement?: {
-    type: 'add' | 'replace' | 'insert';
-    text: string;           // What to add/replace with
-    position?: 'before' | 'after' | 'replace';
-  };
-}
-
-interface AnalysisResult {
-  status: 'analyzing' | 'complete' | 'error';
-  message?: string;
-  analysis?: {
-    issues: PatentIssue[];
-  };
-  total_issues?: number;
-  overall_score?: number;
-  agents_used?: string[];
-  timestamp?: string;
-  error?: string;
-  raw_content?: string;
-  parse_error?: string;
-  // Multi-agent specific fields
-  system_type?: string;
-  workflow?: string;
-  agents?: string[];
-  memory_enabled?: boolean;
-  orchestrator?: string;
-  phase?: string;
-  agent?: string;
-}
-
-interface StreamUpdate {
-  status: 'analyzing';
-  phase?: string;
-  agent?: string;
-  message: string;
-  system_type?: string;
-  workflow?: string;
-  agents?: string[];
-  memory_enabled?: boolean;
-  orchestrator?: string;
-}
-
 interface SuggestionsPanelProps {
   currentDocumentId: number;
   selectedVersionNumber: number;
@@ -83,10 +27,8 @@ interface SuggestionsPanelProps {
   analysisResult: AnalysisResult | null;
   currentPhase?: string;
   streamUpdates: StreamUpdate[];
-  onApplySuggestion?: (issue: PatentIssue, index: number) => void;
-  activeSuggestionId?: string;
-  appliedSuggestionIds?: Set<string>;
-  acceptedSuggestionIds?: Set<string>;
+  onShowSuggestionLocation?: (issue: PatentIssue) => void;
+  activeSuggestion?: PatentIssue | null;
 }
 
 const SuggestionsPanel: React.FC<SuggestionsPanelProps> = ({
@@ -97,10 +39,8 @@ const SuggestionsPanel: React.FC<SuggestionsPanelProps> = ({
   analysisResult,
   currentPhase,
   streamUpdates,
-  onApplySuggestion,
-  activeSuggestionId,
-  appliedSuggestionIds = new Set(),
-  acceptedSuggestionIds = new Set()
+  onShowSuggestionLocation,
+  activeSuggestion
 }) => {
   const [error, setError] = useState<string | null>(null);
 
@@ -147,16 +87,7 @@ const SuggestionsPanel: React.FC<SuggestionsPanelProps> = ({
     }, {} as Record<string, PatentIssue[]>);
   };
 
-  // Filter out accepted suggestions from display, but keep original indices
-  const allIssues = analysisResult?.analysis?.issues || [];
-  const issuesWithOriginalIndex = allIssues
-    .map((issue, originalIndex) => ({ issue, originalIndex }))
-    .filter(({ issue, originalIndex }) => {
-      const suggestionId = generateSuggestionId(issue, originalIndex);
-      return !acceptedSuggestionIds.has(suggestionId);
-    });
-  
-  const issues = issuesWithOriginalIndex.map(item => item.issue);
+  const issues = analysisResult?.analysis?.issues || [];
   const groupedIssues = groupIssuesBySeverity(issues);
 
   return (
@@ -314,13 +245,11 @@ const SuggestionsPanel: React.FC<SuggestionsPanelProps> = ({
 
             {/* Issues List */}
             <div className="space-y-4">
-              {issuesWithOriginalIndex.map(({ issue, originalIndex }) => {
-                const suggestionId = generateSuggestionId(issue, originalIndex);
-                const isApplied = appliedSuggestionIds.has(suggestionId);
-                const isActive = activeSuggestionId === suggestionId;
+              {issues.map((issue, index) => {
+                const isActive = activeSuggestion === issue;
                 
                 return (
-                  <div key={originalIndex} className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm">
+                  <div key={index} className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm">
                     {/* Issue Header */}
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-3">
@@ -349,34 +278,31 @@ const SuggestionsPanel: React.FC<SuggestionsPanelProps> = ({
                       <div className="flex items-start justify-between mb-2">
                         <h5 className="text-sm font-medium text-blue-900">Suggestion:</h5>
                         
-                        {onApplySuggestion && (
-                          <div className="flex flex-col items-end gap-1">
-                            {/* Apply Button States */}
-                            {!isApplied && !isActive && (
-                              <button
-                                onClick={() => onApplySuggestion(issue, originalIndex)}
-                                className="px-3 py-1 text-xs rounded transition-all font-medium bg-blue-600 text-white hover:bg-blue-700 border border-blue-600 hover:border-blue-700"
-                                title="Apply this suggestion to the document"
-                              >
-                                Apply
-                              </button>
-                            )}
-                            
-                            {/* Applied State - Show instructions */}
-                            {(isApplied || isActive) && (
-                              <div className="text-right">
-                                <div className="px-3 py-1 text-xs rounded bg-orange-100 text-orange-800 border border-orange-200 font-medium mb-1">
-                                  Preview Active
-                                </div>
-                                <div className="text-xs text-slate-600">
-                                  <kbd className="px-1 py-0.5 bg-slate-200 rounded text-xs">Tab</kbd> to accept • <kbd className="px-1 py-0.5 bg-slate-200 rounded text-xs">Esc</kbd> to cancel
-                                </div>
-                              </div>
-                            )}
-                          </div>
+                        {onShowSuggestionLocation && (
+                          <button
+                            onClick={() => onShowSuggestionLocation(issue)}
+                            className={`px-3 py-1 text-xs rounded transition-all font-medium ${
+                              isActive 
+                                ? 'bg-orange-100 text-orange-800 border border-orange-200' 
+                                : 'bg-blue-600 text-white hover:bg-blue-700 border border-blue-600 hover:border-blue-700'
+                            }`}
+                            title="Highlight this issue in the document"
+                          >
+                            {isActive ? '📍 Showing' : '📍 Show Me'}
+                          </button>
                         )}
                       </div>
                       <p className="text-sm text-blue-800 leading-relaxed">{issue.suggestion}</p>
+                      
+                      {/* Show replacement text if available */}
+                      {issue.replacement?.text && (
+                        <div className="mt-2 pt-2 border-t border-blue-200">
+                          <div className="text-xs text-blue-700 mb-1">Suggested text:</div>
+                          <div className="bg-white border border-blue-200 rounded p-2">
+                            <code className="text-xs text-slate-800 break-words">{issue.replacement.text}</code>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );

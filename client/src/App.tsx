@@ -1,12 +1,11 @@
-import Document from "./Document";
 import { useEffect, useState } from "react";
 import axios from "axios";
+import Document from "./Document";
 import LoadingOverlay from "./internal/LoadingOverlay";
 import Logo from "./assets/logo.png";
 import SuggestionsPanel from "./components/SuggestionsPanel";
 import { useSocket } from "./hooks/useSocket";
-import { findSuggestionPosition, generateSuggestionId } from "./utils/suggestionUtils";
-
+import { PatentIssue, PanelSuggestion } from "./types/PatentTypes";
 
 const BACKEND_URL = "http://localhost:8000";
 
@@ -24,33 +23,6 @@ interface DocumentInfo {
   title: string;
 }
 
-interface PatentIssue {
-  type: string;
-  severity: 'high' | 'medium' | 'low';
-  paragraph?: number;
-  description: string;
-  suggestion: string;
-  target?: {
-    text?: string;           
-    position?: number;       
-    pattern?: string;        
-    context?: string;        
-  };
-  replacement?: {
-    type: 'add' | 'replace' | 'insert';
-    text: string;           
-    position?: 'before' | 'after' | 'replace';
-  };
-}
-
-interface PanelSuggestion {
-  issue: PatentIssue;
-  position: number;
-  originalText: string;
-  replacementText: string;
-  type: 'add' | 'replace' | 'insert';
-}
-
 function App() {
   // Stateless frontend state management
   const [currentDocumentContent, setCurrentDocumentContent] = useState<string>("");
@@ -61,11 +33,8 @@ function App() {
   const [isDirty, setIsDirty] = useState<boolean>(false);  // Has content been modified?
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  // Panel suggestion state
+  // Panel suggestion state - simplified to just show location
   const [activePanelSuggestion, setActivePanelSuggestion] = useState<PanelSuggestion | null>(null);
-  const [activeSuggestionId, setActiveSuggestionId] = useState<string>('');
-  const [appliedSuggestionIds, setAppliedSuggestionIds] = useState<Set<string>>(new Set());
-  const [acceptedSuggestionIds, setAcceptedSuggestionIds] = useState<Set<string>>(new Set());
 
   // WebSocket integration for AI suggestions with multi-agent streaming
   const {
@@ -78,7 +47,8 @@ function App() {
     requestInlineSuggestion,
     pendingSuggestion,
     acceptInlineSuggestion,
-    rejectInlineSuggestion
+    rejectInlineSuggestion,
+    clearPendingSuggestion
   } = useSocket();
 
   // Load the first patent on mount
@@ -86,10 +56,13 @@ function App() {
     loadPatent(1);
   }, []);
 
-  // Load a document with stateless architecture
+  // Clear pending inline suggestions when document version changes (not on every edit!)
+  useEffect(() => {
+    clearPendingSuggestion();
+  }, [selectedVersionNumber, currentDocumentId]);
+
   const loadPatent = async (documentNumber: number) => {
     setIsLoading(true);
-    console.log("Loading patent:", documentNumber);
     try {
       // Load document metadata (stateless - no content in document)
       const docResponse = await axios.get(
@@ -142,7 +115,6 @@ function App() {
       );
 
       setIsDirty(false);
-      console.log(`Saved to version ${selectedVersionNumber}`);
     } catch (error) {
       console.error("Error saving version:", error);
     }
@@ -163,7 +135,6 @@ function App() {
       setAvailableVersions(prev => [...prev, newVersion]);
       setSelectedVersionNumber(newVersion.version_number);
       setIsDirty(false);
-      console.log(`Created version ${newVersion.version_number}`);
     } catch (error) {
       console.error("Error creating new version:", error);
     }
@@ -187,7 +158,6 @@ function App() {
       setSelectedVersionNumber(versionNumber);
       setCurrentDocumentContent(version.content);
       setIsDirty(false);
-      console.log(`Switched to version ${versionNumber}`);
     }
   };
 
@@ -204,77 +174,17 @@ function App() {
     }
   };
 
-  // Handle applying panel suggestions
-  const handleApplySuggestion = (issue: PatentIssue, index: number) => {
-    console.log('🎯 Applying panel suggestion:', issue.type);
+  const handleShowSuggestionLocation = (issue: PatentIssue) => {
+    // Simply pass the issue to the editor to highlight the location
+    const panelSuggestion: PanelSuggestion = {
+      issue
+    };
     
-    // Clear any existing panel suggestion
-    setActivePanelSuggestion(null);
-    setActiveSuggestionId('');
-    
-    // Find position in editor using suggestion utils
-    const location = findSuggestionPosition(issue, currentDocumentContent);
-    
-    if (location) {
-      const suggestionId = generateSuggestionId(issue, index);
-      
-      const panelSuggestion: PanelSuggestion = {
-        issue,
-        position: location.position,
-        originalText: location.originalText,
-        replacementText: location.replacementText,
-        type: location.type
-      };
-      
-      setActivePanelSuggestion(panelSuggestion);
-      setActiveSuggestionId(suggestionId);
-      
-      // Mark this suggestion as applied (hides Apply button)
-      setAppliedSuggestionIds(prev => new Set(prev).add(suggestionId));
-      
-      console.log('✅ Panel suggestion activated:', panelSuggestion);
-    } else {
-      // Show error - couldn't locate where to apply
-      alert('Could not locate where to apply this suggestion in the document.');
-    }
+    setActivePanelSuggestion(panelSuggestion);
   };
 
-  // Handle accepting panel suggestions
-  const handleAcceptPanelSuggestion = () => {
-    console.log('✅ Panel suggestion accepted');
-    
-    if (activeSuggestionId) {
-      // Mark as accepted to permanently hide from panel
-      setAcceptedSuggestionIds(prev => new Set(prev).add(activeSuggestionId));
-      
-      // Remove from applied suggestions (cleanup)
-      setAppliedSuggestionIds(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(activeSuggestionId);
-        return newSet;
-      });
-    }
-    
+  const handleDismissPanelSuggestion = () => {
     setActivePanelSuggestion(null);
-    setActiveSuggestionId('');
-    // Note: The actual text modification is handled by the Editor component
-  };
-
-  // Handle rejecting panel suggestions
-  const handleRejectPanelSuggestion = () => {
-    console.log('❌ Panel suggestion rejected');
-    
-    if (activeSuggestionId) {
-      // Remove from applied suggestions to restore Apply button
-      setAppliedSuggestionIds(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(activeSuggestionId);
-        return newSet;
-      });
-    }
-    
-    setActivePanelSuggestion(null);
-    setActiveSuggestionId('');
   };
 
   return (
@@ -400,8 +310,7 @@ function App() {
                 onAcceptSuggestion={acceptInlineSuggestion}
                 onRejectSuggestion={rejectInlineSuggestion}
                 activePanelSuggestion={activePanelSuggestion}
-                onAcceptPanelSuggestion={handleAcceptPanelSuggestion}
-                onRejectPanelSuggestion={handleRejectPanelSuggestion}
+                onDismissPanelSuggestion={handleDismissPanelSuggestion}
               />
             </div>
 
@@ -415,10 +324,8 @@ function App() {
                 analysisResult={analysisResult}
                 currentPhase={currentPhase}
                 streamUpdates={streamUpdates}
-                onApplySuggestion={handleApplySuggestion}
-                activeSuggestionId={activeSuggestionId}
-                appliedSuggestionIds={appliedSuggestionIds}
-                acceptedSuggestionIds={acceptedSuggestionIds}
+                onShowSuggestionLocation={handleShowSuggestionLocation}
+                activeSuggestion={activePanelSuggestion?.issue || null}
               />
             </div>
           </div>

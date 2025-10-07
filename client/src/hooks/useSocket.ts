@@ -1,81 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-
-interface PatentIssue {
-  type: string;
-  severity: 'high' | 'medium' | 'low';
-  paragraph?: number;
-  description: string;
-  suggestion: string;
-}
-
-interface StreamUpdate {
-  status: 'analyzing';
-  phase?: string;
-  agent?: string;
-  message: string;
-  system_type?: string;
-  workflow?: string;
-  agents?: string[];
-  memory_enabled?: boolean;
-  orchestrator?: string;
-}
-
-interface MultiAgentAnalysisResult {
-  status: 'complete';
-  analysis: {
-    issues: PatentIssue[];
-  };
-  total_issues: number;
-  overall_score?: number;
-  agents_used?: string[];
-  timestamp?: string;
-}
-
-interface AnalysisResult {
-  status: 'analyzing' | 'complete' | 'error';
-  message?: string;
-  analysis?: {
-    issues: PatentIssue[];
-  };
-  total_issues?: number;
-  overall_score?: number;
-  agents_used?: string[];
-  timestamp?: string;
-  error?: string;
-  raw_content?: string;
-  parse_error?: string;
-  // Multi-agent specific fields
-  system_type?: string;
-  workflow?: string;
-  agents?: string[];
-  memory_enabled?: boolean;
-  orchestrator?: string;
-  phase?: string;
-  agent?: string;
-}
+import { 
+  AnalysisResult, 
+  StreamUpdate, 
+  InlineSuggestionResponse 
+} from '../types/PatentTypes';
 
 type WebSocketResponse = AnalysisResult | InlineSuggestionResponse;
-
-interface InlineSuggestionRequest {
-  type: 'inline_suggestion';
-  content: string;
-  cursor_position: number;
-  context_before: string;
-  context_after: string;
-  suggestion_type: 'completion' | 'improvement' | 'correction';
-}
-
-interface InlineSuggestionResponse {
-  status: 'inline_suggestion';
-  suggestion_id: string;
-  original_text: string;
-  suggested_text: string;
-  position: { from: number; to: number };
-  confidence: number;
-  reasoning: string;
-  type: 'completion' | 'improvement' | 'correction';
-}
 
 interface UseWebSocketReturn {
   isConnected: boolean;
@@ -88,6 +19,7 @@ interface UseWebSocketReturn {
   pendingSuggestion: InlineSuggestionResponse | null;
   acceptInlineSuggestion: (suggestion: InlineSuggestionResponse) => void;
   rejectInlineSuggestion: () => void;
+  clearPendingSuggestion: () => void;
 }
 
 export const useSocket = (): UseWebSocketReturn => {
@@ -210,7 +142,6 @@ export const useSocket = (): UseWebSocketReturn => {
           // Handle inline suggestions
           const suggestion = response as InlineSuggestionResponse;
           setPendingSuggestion(suggestion);
-          console.log('💡 Inline suggestion received:', suggestion.suggested_text);
 
         } else if (response.status === 'error') {
           // Handle errors
@@ -318,6 +249,11 @@ export const useSocket = (): UseWebSocketReturn => {
     setPendingSuggestion(null);
   };
 
+  const clearPendingSuggestion = () => {
+    console.log('🧹 Clearing pending inline suggestion');
+    setPendingSuggestion(null);
+  };
+
   return {
     isConnected,
     requestAISuggestions,
@@ -328,6 +264,7 @@ export const useSocket = (): UseWebSocketReturn => {
     requestInlineSuggestion,
     pendingSuggestion,
     acceptInlineSuggestion,
-    rejectInlineSuggestion
+    rejectInlineSuggestion,
+    clearPendingSuggestion
   };
 };
