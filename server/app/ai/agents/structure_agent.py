@@ -14,8 +14,8 @@ logger = logging.getLogger(__name__)
 
 class DocumentStructureAgent(BasePatentAgent):
     
-    def __init__(self, memory=None):
-        super().__init__("structure", memory)
+    def __init__(self):
+        super().__init__("structure")
 
     async def analyze(self, state: PatentAnalysisState, stream_callback=None) -> Dict[str, Any]:
         logger.info("STRUCTURE AGENT: Starting AI-powered analysis")

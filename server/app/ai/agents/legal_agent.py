@@ -14,8 +14,8 @@ logger = logging.getLogger(__name__)
 
 class LegalComplianceAgent(BasePatentAgent):
     
-    def __init__(self, memory=None):
-        super().__init__("legal", memory)
+    def __init__(self):
+        super().__init__("legal")
 
     async def analyze(self, state: PatentAnalysisState, stream_callback=None) -> Dict[str, Any]:
         """

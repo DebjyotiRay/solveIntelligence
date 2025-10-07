@@ -11,12 +11,10 @@ class BasePatentAgent(ABC):
     
     def __init__(
         self, 
-        agent_name: str, 
-        memory=None,
+        agent_name: str,
         max_retries: int = 3
     ):
         self.agent_name = agent_name
-        self.memory = memory
         self.max_retries = max_retries
         self.logger = logging.getLogger(f"agent.{agent_name}")
 
