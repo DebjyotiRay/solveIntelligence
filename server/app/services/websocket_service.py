@@ -128,51 +128,81 @@ class WebSocketService:
             }))
 
             async def stream_callback(update):
-                if not hasattr(websocket, 'client_state') or websocket.client_state is None:
-                    print(f"⚠️ STREAM_CALLBACK: WebSocket client_state is None")
-                    return
+                try:
+                    if not hasattr(websocket, 'client_state') or websocket.client_state is None:
+                        print(f"⚠️ STREAM_CALLBACK: WebSocket client_state is None - client disconnected")
+                        return
+                        
+                    if websocket.client_state.value != 1:
+                        print(f"⚠️ STREAM_CALLBACK: WebSocket not connected (state: {websocket.client_state.value})")
+                        return
                     
-                if websocket.client_state.value != 1:
-                    print(f"⚠️ STREAM_CALLBACK: WebSocket not connected (state: {websocket.client_state.value})")
+                    json_data = json.dumps(update)
+                    await websocket.send_text(json_data)
+                except RuntimeError as e:
+                    if "close message has been sent" in str(e):
+                        print(f"⚠️ STREAM_CALLBACK: Client disconnected during analysis")
+                        return
+                    raise
+                except Exception as e:
+                    print(f"⚠️ STREAM_CALLBACK: Error sending update: {e}")
                     return
-                
-                json_data = json.dumps(update)
-                await websocket.send_text(json_data)
 
             try:
                 final_analysis = await coordinator.analyze_patent(document, stream_callback)
 
-                if final_analysis.get("status") == "error":
-                    await websocket.send_text(json.dumps(final_analysis))
-                else:
-                    structured_response = {
-                        "status": "complete",
-                        "analysis": {
-                            "issues": final_analysis.get("all_issues", [])
-                        },
-                        "total_issues": len(final_analysis.get("all_issues", [])),
-                        "overall_score": final_analysis.get("overall_score", 0.0),
-                        "agents_used": final_analysis.get("analysis_metadata", {}).get("agents_used", []),
-                        "timestamp": final_analysis.get("analysis_timestamp")
-                    }
-                    await websocket.send_text(json.dumps(structured_response))
+                # Check if websocket is still connected before sending final result
+                try:
+                    if hasattr(websocket, 'client_state') and websocket.client_state and websocket.client_state.value == 1:
+                        if final_analysis.get("status") == "error":
+                            await websocket.send_text(json.dumps(final_analysis))
+                        else:
+                            structured_response = {
+                                "status": "complete",
+                                "analysis": {
+                                    "issues": final_analysis.get("all_issues", [])
+                                },
+                                "total_issues": len(final_analysis.get("all_issues", [])),
+                                "overall_score": final_analysis.get("overall_score", 0.0),
+                                "agents_used": final_analysis.get("analysis_metadata", {}).get("agents_used", []),
+                                "timestamp": final_analysis.get("analysis_timestamp")
+                            }
+                            await websocket.send_text(json.dumps(structured_response))
+                    else:
+                        print("⚠️ Client disconnected before final results could be sent")
+                except RuntimeError as e:
+                    if "close message has been sent" in str(e):
+                        print("⚠️ Client disconnected - cannot send final results")
+                    else:
+                        raise
             except json.JSONDecodeError as json_err:
                 print(f"❌ JSON parsing error in analysis pipeline: {json_err}")
-                await websocket.send_text(json.dumps({
-                    "status": "error",
-                    "error": f"AI response parsing failed: {str(json_err)}",
-                    "error_type": "json_decode_error",
-                    "suggestion": "The AI may have returned invalid JSON. Please try again."
-                }))
+                try:
+                    if hasattr(websocket, 'client_state') and websocket.client_state and websocket.client_state.value == 1:
+                        await websocket.send_text(json.dumps({
+                            "status": "error",
+                            "error": f"AI response parsing failed: {str(json_err)}",
+                            "error_type": "json_decode_error",
+                            "suggestion": "The AI may have returned invalid JSON. Please try again."
+                        }))
+                except RuntimeError:
+                    print("⚠️ Cannot send error - client already disconnected")
+            except WebSocketDisconnect:
+                print("⚠️ Client disconnected during analysis")
+                break
             except Exception as analysis_err:
                 print(f"❌ Analysis error: {analysis_err}")
                 import traceback
                 print(f"❌ Traceback: {traceback.format_exc()}")
-                await websocket.send_text(json.dumps({
-                    "status": "error",
-                    "error": f"Analysis failed: {str(analysis_err)}",
-                    "error_type": "analysis_error"
-                }))
+                try:
+                    if hasattr(websocket, 'client_state') and websocket.client_state and websocket.client_state.value == 1:
+                        await websocket.send_text(json.dumps({
+                            "status": "error",
+                            "error": f"Analysis failed: {str(analysis_err)}",
+                            "error_type": "analysis_error"
+                        }))
+                except RuntimeError:
+                    print("⚠️ Cannot send error - client already disconnected")
 
     @staticmethod
     async def _handle_original_ai_analysis(websocket: WebSocket):

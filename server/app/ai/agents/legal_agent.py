@@ -130,6 +130,17 @@ Based on this comprehensive analysis, provide:
 
 Focus on practical legal guidance that considers all aspects together.
 
+For EACH issue, YOU MUST provide:
+- Exact location (paragraph number if applicable, claim number, or section name)
+- Specific text to find - THE ACTUAL WORDS that need changing (minimum 10-30 characters)
+- Complete replacement text in proper format
+- For spelling/grammar: Include the exact misspelled word in target.text and corrected word in replacement.text
+
+CRITICAL FOR SPELLING/GRAMMAR/TERMINOLOGY:
+- target.text MUST contain the EXACT incorrect word/phrase (e.g., "recieve" not just "spelling error")  
+- replacement.text MUST contain the EXACT corrected word/phrase (e.g., "receive")
+- Do NOT report generic errors - be specific: "Change 'substancially' to 'substantially' in Claim 1"
+
 Respond in JSON format:
 {{
   "conclusions": ["conclusion 1", "conclusion 2", "conclusion 3"],
@@ -137,16 +148,33 @@ Respond in JSON format:
     {{
       "type": "legal_compliance", 
       "description": "issue description", 
-      "severity": "high/medium/low", 
+      "severity": "high/medium/low",
+      "paragraph": 1,
       "suggestion": "specific actionable solution to fix this issue",
-      "legal_basis": "relevant law/rule"
+      "legal_basis": "relevant law/rule",
+      "target": {{
+        "text": "exact text to find and replace (if applicable)",
+        "section": "section name where this applies (e.g., Claims, Abstract, etc.)",
+        "position": "before/after/replace"
+      }},
+      "replacement": {{
+        "type": "add/replace/insert",
+        "text": "COMPLETE formatted text to add or replace with"
+      }}
     }}
   ],
   "recommendations": ["recommendation 1", "recommendation 2", "recommendation 3"],
   "filing_strategy": "brief strategic guidance",
   "overall_assessment": "summary of patent's legal readiness",
   "confidence": 0.0-1.0
-}}"""
+}}
+
+IMPORTANT:
+- For missing required sections, provide the complete section template in replacement.text
+- For claim definiteness issues, provide the corrected claim text
+- For enablement issues, provide specific language additions
+- Always include target.text when replacing existing content
+- Use target.section to specify where in the document structure this applies"""
 
             response = client.chat.completions.create(
                 model="gpt-4-turbo-preview",

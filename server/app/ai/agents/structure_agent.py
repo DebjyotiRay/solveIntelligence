@@ -172,17 +172,50 @@ Find and report:
 3. Vague or indefinite language (e.g., "substantially", "about", "effective")
 4. Antecedent basis problems (elements introduced with "a/an" must be referenced with "the")
 5. Dependency issues in claims
-6. Grammar, spelling, or clarity issues
+6. Grammar, spelling, or clarity issues - MUST include exact misspelled word and its correction
 7. Any other structural or formatting problems
+
+For EACH issue, YOU MUST provide:
+- Exact location (paragraph number if applicable, or section name)
+- Specific text to find - THE ACTUAL WORDS that need changing (minimum 10-30 characters)
+- Complete replacement text in proper format
+- For spelling/grammar: Include the misspelled word in target.text and corrected word in replacement.text
+
+CRITICAL FOR SPELLING/GRAMMAR: 
+- target.text MUST contain the EXACT misspelled or incorrect word/phrase (e.g., "recieve" not just "spelling error")
+- replacement.text MUST contain the EXACT corrected spelling (e.g., "receive")
+- Do NOT report generic "check spelling" - report "Change 'recieve' to 'receive' in paragraph 3"
 
 Respond in JSON format:
 {{
   "confidence": 0.0-1.0,
   "issues": [
-    {{"type": "issue_type", "severity": "high/medium/low", "description": "specific issue", "suggestion": "how to fix"}}
+    {{
+      "type": "issue_type",
+      "severity": "high/medium/low",
+      "paragraph": 3,
+      "description": "specific issue description",
+      "suggestion": "how to fix it",
+      "target": {{
+        "text": "exact text to find and replace (if applicable)",
+        "section": "section name where this applies (e.g., Claims, Abstract, etc.)",
+        "position": "before/after/replace"
+      }},
+      "replacement": {{
+        "type": "add/replace/insert",
+        "text": "COMPLETE formatted text to add or replace with"
+      }}
+    }}
   ],
   "recommendations": ["recommendation1", "recommendation2"]
-}}"""
+}}
+
+IMPORTANT: 
+- For missing sections, provide the complete section template in replacement.text
+- For punctuation fixes, provide the exact punctuation mark in replacement.text
+- For antecedent basis, provide the corrected phrase in replacement.text
+- Always include target.text when replacing existing content
+- Use target.section to specify where in the document structure this applies"""
 
             if stream_callback:
                 await stream_callback({
