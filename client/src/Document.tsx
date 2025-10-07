@@ -4,6 +4,8 @@ import { InlineSuggestion, PanelSuggestion } from "./types/PatentTypes";
 export interface DocumentProps {
   onContentChange: (content: string) => void;
   content: string;
+  documentId: number;
+  versionNumber: number;
   // Inline suggestion props
   onInlineSuggestionRequest?: (content: string, pos: number, before: string, after: string) => void;
   pendingSuggestion?: InlineSuggestion | null;
@@ -17,6 +19,8 @@ export interface DocumentProps {
 export default function Document({
   onContentChange,
   content,
+  documentId,
+  versionNumber,
   onInlineSuggestionRequest,
   pendingSuggestion,
   onAcceptSuggestion,
@@ -33,6 +37,8 @@ export default function Document({
       <Editor
         handleEditorChange={handleEditorChange}
         content={content}
+        documentId={documentId}
+        versionNumber={versionNumber}
         onInlineSuggestionRequest={onInlineSuggestionRequest}
         pendingSuggestion={pendingSuggestion}
         onAcceptSuggestion={onAcceptSuggestion}

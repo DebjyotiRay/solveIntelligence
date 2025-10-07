@@ -8,6 +8,12 @@ import logging
 from .base_agent import BasePatentAgent
 from ..workflow.patent_state import PatentAnalysisState
 from ..tools.http_search_tools import http_search_tool
+from ..types import (
+    LegalAnalysisResult,
+    LegalIssue,
+    TargetLocation,
+    ReplacementText
+)
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +23,7 @@ class LegalComplianceAgent(BasePatentAgent):
     def __init__(self):
         super().__init__("legal")
 
-    async def analyze(self, state: PatentAnalysisState, stream_callback=None) -> Dict[str, Any]:
+    async def analyze(self, state: PatentAnalysisState, stream_callback=None) -> LegalAnalysisResult:
         """
         Analyze legal compliance and regulatory requirements with memory-enhanced learning.
 
@@ -26,7 +32,7 @@ class LegalComplianceAgent(BasePatentAgent):
             stream_callback: Optional callback for streaming progress updates
 
         Returns:
-            Legal compliance analysis results
+            Typed legal compliance analysis results
         """
 
         logger.info("LEGAL AGENT: Starting analysis")
@@ -59,34 +65,25 @@ class LegalComplianceAgent(BasePatentAgent):
             prior_art_search
         )
         
-        logger.info(f"LEGAL AGENT: Analysis complete - {len(comprehensive_analysis.get('issues', []))} issues found")
+        logger.info(f"LEGAL AGENT: Analysis complete - {len(comprehensive_analysis.issues)} issues found")
         
-        findings = {
-            "type": "legal_analysis",
-            "comprehensive_analysis": comprehensive_analysis,
-            "issues": comprehensive_analysis.get("issues", []),
-            "recommendations": comprehensive_analysis.get("recommendations", []),
-            "legal_conclusions": comprehensive_analysis.get("conclusions", []),
-            "confidence": comprehensive_analysis.get("confidence", 0.5)
-        }
-        
-        return findings
+        return comprehensive_analysis
 
     async def _ai_comprehensive_legal_analysis(
         self, 
         parsed_doc: Dict[str, Any], 
         regulatory_info: Dict[str, Any],
         prior_art_search: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    ) -> LegalAnalysisResult:
         
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
-            return {
-                "issues": [],
-                "recommendations": ["Legal review recommended"],
-                "conclusions": ["Unable to perform analysis"],
-                "confidence": 0.5
-            }
+            return LegalAnalysisResult(
+                issues=[],
+                recommendations=["Legal review recommended"],
+                conclusions=["Unable to perform analysis"],
+                confidence=0.5
+            )
         
         try:
             client = openai.OpenAI(api_key=api_key)
@@ -194,31 +191,66 @@ IMPORTANT:
             
             result = json.loads(cleaned_content)
             
-            return {
-                "conclusions": result.get("conclusions", []),
-                "issues": result.get("issues", []),
-                "recommendations": result.get("recommendations", []),
-                "filing_strategy": result.get("filing_strategy", ""),
-                "overall_assessment": result.get("overall_assessment", ""),
-                "confidence": result.get("confidence", 0.7),
-                "comprehensive_analysis": True
-            }
+            # Convert issues to Pydantic models
+            issues = []
+            for issue_data in result.get("issues", []):
+                target = None
+                if "target" in issue_data and issue_data["target"]:
+                    target = TargetLocation(**issue_data["target"])
+                
+                replacement = None
+                if "replacement" in issue_data and issue_data["replacement"]:
+                    replacement = ReplacementText(**issue_data["replacement"])
+                
+                issue = LegalIssue(
+                    type=issue_data.get("type", "legal_compliance"),
+                    severity=issue_data.get("severity", "medium"),
+                    description=issue_data.get("description", ""),
+                    suggestion=issue_data.get("suggestion", ""),
+                    legal_basis=issue_data.get("legal_basis"),
+                    paragraph=issue_data.get("paragraph"),
+                    target=target,
+                    replacement=replacement
+                )
+                issues.append(issue)
+            
+            return LegalAnalysisResult(
+                conclusions=result.get("conclusions", []),
+                issues=issues,
+                recommendations=result.get("recommendations", []),
+                filing_strategy=result.get("filing_strategy"),
+                overall_assessment=result.get("overall_assessment"),
+                confidence=result.get("confidence", 0.7),
+                legal_conclusions=result.get("conclusions", [])
+            )
 
         except json.JSONDecodeError as e:
             logger.error(f"LEGAL AGENT: JSON parse error: {e}")
-            return {
-                "issues": [{"description": "AI legal analysis failed - JSON parsing error", "severity": "high", "legal_basis": "Analysis Error"}],
-                "recommendations": ["Legal review recommended due to analysis error"],
-                "conclusions": ["Comprehensive analysis failed"],
-                "confidence": 0.5,
-                "comprehensive_analysis": False
-            }
+            return LegalAnalysisResult(
+                issues=[LegalIssue(
+                    type="analysis_error",
+                    description="AI legal analysis failed - JSON parsing error",
+                    severity="high",
+                    suggestion="Manual legal review required",
+                    legal_basis="Analysis Error"
+                )],
+                recommendations=["Legal review recommended due to analysis error"],
+                conclusions=["Comprehensive analysis failed"],
+                confidence=0.5,
+                comprehensive_analysis=False
+            )
         except Exception as e:
             logger.error(f"LEGAL AGENT: Analysis error: {e}")
-            return {
-                "issues": [{"description": f"AI legal analysis failed: {str(e)}", "severity": "high", "legal_basis": "Analysis Error"}],
-                "recommendations": ["Legal review recommended due to analysis error"],
-                "conclusions": ["Comprehensive analysis unavailable"],
-                "confidence": 0.5,
-                "comprehensive_analysis": False
-            }
+            return LegalAnalysisResult(
+                issues=[LegalIssue(
+                    type="analysis_error",
+                    description=f"AI legal analysis failed: {str(e)}",
+                    severity="high",
+                    suggestion="Manual legal review required",
+                    legal_basis="Analysis Error"
+                )],
+                recommendations=["Legal review recommended due to analysis error"],
+                conclusions=["Comprehensive analysis unavailable"],
+                confidence=0.5,
+                comprehensive_analysis=False
+            )

@@ -1,4 +1,5 @@
 import json
+import traceback
 from datetime import datetime
 from typing import Callable
 
@@ -192,7 +193,6 @@ class WebSocketService:
                 break
             except Exception as analysis_err:
                 print(f"❌ Analysis error: {analysis_err}")
-                import traceback
                 print(f"❌ Traceback: {traceback.format_exc()}")
                 try:
                     if hasattr(websocket, 'client_state') and websocket.client_state and websocket.client_state.value == 1:

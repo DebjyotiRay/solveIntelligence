@@ -8,6 +8,8 @@ import "../inline-suggestions.css";
 export interface EditorProps {
   handleEditorChange: (content: string) => void;
   content: string;
+  documentId: number;
+  versionNumber: number;
   // Inline suggestion props
   onInlineSuggestionRequest?: (content: string, pos: number, before: string, after: string, triggerType?: string) => void;
   pendingSuggestion?: InlineSuggestion | null;
@@ -21,6 +23,8 @@ export interface EditorProps {
 export default function Editor({
   handleEditorChange,
   content,
+  documentId,
+  versionNumber,
   onInlineSuggestionRequest,
   pendingSuggestion,
   onAcceptSuggestion,
@@ -37,7 +41,8 @@ export default function Editor({
       StarterKit,
       InlineSuggestions.configure({
         onSuggestionRequest: onInlineSuggestionRequest || (() => {}),
-        debounceMs: 1500
+        debounceMs: 1500,
+        documentKey: `${documentId}-${versionNumber}`
       })
     ],
     onUpdate: ({ editor }) => {

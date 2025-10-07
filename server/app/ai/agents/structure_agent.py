@@ -8,6 +8,7 @@ from typing import Dict, Any, List
 from .base_agent import BasePatentAgent
 from ..workflow.patent_state import PatentAnalysisState
 from ..utils import strip_html
+from ..types import StructureAnalysisResult, StructuralIssue
 
 logger = logging.getLogger(__name__)
 
@@ -135,15 +136,16 @@ class DocumentStructureAgent(BasePatentAgent):
         figure_refs = re.findall(r'(?:FIG\.?\s*\d+|Figure\s*\d+)', content, re.IGNORECASE)
         return list(set(figure_refs))
 
-    async def _ai_validate_document(self, parsed_doc: Dict[str, Any], stream_callback=None) -> Dict[str, Any]:
+    async def _ai_validate_document(self, parsed_doc: Dict[str, Any], stream_callback=None) -> StructureAnalysisResult:
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             logger.warning("No OpenAI API key - skipping AI validation")
-            return {
-                "confidence": 0.5,
-                "issues": [],
-                "recommendations": []
-            }
+            return StructureAnalysisResult(
+                status="error",
+                confidence=0.5,
+                issues=[],
+                suggestions=[]
+            )
 
         try:
             client = openai.OpenAI(api_key=api_key)
@@ -241,30 +243,50 @@ IMPORTANT:
             
             result = json.loads(result_text)
             
-            logger.info(f"STRUCTURE AGENT: AI validation complete - confidence: {result.get('confidence', 0)}")
-            return result
+            # Convert to typed model
+            issues = []
+            for issue in result.get('issues', []):
+                issues.append(StructuralIssue(
+                    type=issue.get('type', 'other'),
+                    severity=issue.get('severity', 'medium'),
+                    description=issue.get('description', ''),
+                    location=issue.get('target', {}).get('section') if 'target' in issue else None,
+                    suggestion=issue.get('suggestion', '')
+                ))
+            
+            typed_result = StructureAnalysisResult(
+                status="complete",
+                confidence=result.get('confidence', 0.5),
+                issues=issues,
+                suggestions=result.get('recommendations', [])
+            )
+            
+            logger.info(f"STRUCTURE AGENT: AI validation complete - confidence: {typed_result.confidence}")
+            return typed_result
 
         except json.JSONDecodeError as e:
             logger.error(f"STRUCTURE AGENT: JSON parse error: {e}")
-            return {
-                "confidence": 0.5,
-                "issues": [{
-                    "type": "analysis_error",
-                    "severity": "low",
-                    "description": "AI response parsing failed",
-                    "suggestion": "Manual review recommended"
-                }],
-                "recommendations": []
-            }
+            return StructureAnalysisResult(
+                status="error",
+                confidence=0.5,
+                issues=[StructuralIssue(
+                    type="format_error",
+                    severity="low",
+                    description="AI response parsing failed",
+                    suggestion="Manual review recommended"
+                )],
+                suggestions=[]
+            )
         except Exception as e:
             logger.error(f"STRUCTURE AGENT: AI validation failed: {e}")
-            return {
-                "confidence": 0.5,
-                "issues": [{
-                    "type": "analysis_error",
-                    "severity": "low",
-                    "description": f"Analysis error: {str(e)}",
-                    "suggestion": "Manual review recommended"
-                }],
-                "recommendations": []
-            }
+            return StructureAnalysisResult(
+                status="error",
+                confidence=0.5,
+                issues=[StructuralIssue(
+                    type="format_error",
+                    severity="low",
+                    description=f"Analysis error: {str(e)}",
+                    suggestion="Manual review recommended"
+                )],
+                suggestions=[]
+            )

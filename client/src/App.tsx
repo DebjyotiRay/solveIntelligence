@@ -305,6 +305,8 @@ function App() {
               <Document
                 onContentChange={handleContentChange}
                 content={currentDocumentContent}
+                documentId={currentDocumentId}
+                versionNumber={selectedVersionNumber}
                 onInlineSuggestionRequest={requestInlineSuggestion}
                 pendingSuggestion={pendingSuggestion}
                 onAcceptSuggestion={acceptInlineSuggestion}

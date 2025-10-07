@@ -1,11 +1,15 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 import logging
 from datetime import datetime
 
 from ..workflow.patent_state import PatentAnalysisState, update_agent_progress, AgentStatus
+from ..types import StructureAnalysisResult, LegalAnalysisResult
 
 logger = logging.getLogger(__name__)
+
+# Type alias for agent analysis results
+AnalysisResult = Union[StructureAnalysisResult, LegalAnalysisResult, Dict[str, Any]]
 
 class BasePatentAgent(ABC):
     
@@ -23,7 +27,13 @@ class BasePatentAgent(ABC):
         self, 
         state: PatentAnalysisState,
         stream_callback=None
-    ) -> Dict[str, Any]:
+    ) -> AnalysisResult:
+        """
+        Perform analysis and return typed results.
+        
+        Returns:
+            Union of StructureAnalysisResult, LegalAnalysisResult, or Dict for backward compatibility
+        """
         pass
 
     async def analyze_with_memory(
@@ -84,14 +94,28 @@ class BasePatentAgent(ABC):
                 error_state = self._handle_analysis_failure(state, e)
                 return error_state
 
-    def _validate_analysis_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+    def _validate_analysis_result(self, result: AnalysisResult) -> Dict[str, Any]:
+        """
+        Validate and normalize analysis results from Pydantic models or dicts.
+        
+        Args:
+            result: Analysis result (Pydantic model or dict)
+            
+        Returns:
+            Normalized dict with validated fields
+        """
+        # Convert Pydantic model to dict if needed
+        if hasattr(result, 'model_dump'):
+            result_dict = result.model_dump()
+        else:
+            result_dict = dict(result) if not isinstance(result, dict) else result
         
         validated = {
             "agent": self.agent_name,
             "timestamp": datetime.now().isoformat(),
-            "confidence": result.get("confidence", 0.5),
-            "type": result.get("type", f"{self.agent_name}_analysis"),
-            **result
+            "confidence": result_dict.get("confidence", 0.5),
+            "type": result_dict.get("type", f"{self.agent_name}_analysis"),
+            **result_dict
         }
         
         validated["confidence"] = max(0.0, min(1.0, validated["confidence"]))
