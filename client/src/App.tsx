@@ -48,6 +48,7 @@ function App() {
     pendingSuggestion,
     acceptInlineSuggestion,
     rejectInlineSuggestion,
+    cycleInlineSuggestion,
     clearPendingSuggestion
   } = useSocket();
 
@@ -311,6 +312,7 @@ function App() {
                 pendingSuggestion={pendingSuggestion}
                 onAcceptSuggestion={acceptInlineSuggestion}
                 onRejectSuggestion={rejectInlineSuggestion}
+                onCycleAlternative={cycleInlineSuggestion}
                 activePanelSuggestion={activePanelSuggestion}
                 onDismissPanelSuggestion={handleDismissPanelSuggestion}
               />

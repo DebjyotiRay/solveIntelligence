@@ -46,22 +46,39 @@ class WebSocketService:
             suggestion_type=suggestion_type
         )
 
-        suggested_text = result["suggested_text"]
-        reasoning = result["reasoning"]
+        # Extract alternatives (new format)
+        alternatives = result.get("alternatives", [])
+
+        # Fallback for old format (single suggested_text)
+        if not alternatives and "suggested_text" in result:
+            alternatives = [{
+                "text": result["suggested_text"],
+                "confidence": result.get("confidence", 0.8),
+                "reasoning": result.get("reasoning", "AI completion")
+            }]
+
+        # Calculate anchor text (last 50 chars before cursor for validation)
+        anchor_text = context_before[-50:] if len(context_before) > 50 else context_before
 
         response = {
             "status": "inline_suggestion",
             "suggestion_id": f"suggestion_{hash(content + str(cursor_pos))}",
-            "original_text": context_before,
-            "suggested_text": suggested_text,
-            "position": {"from": cursor_pos, "to": cursor_pos},
-            "confidence": 0.8,
-            "reasoning": reasoning,
-            "type": suggestion_type
+            "position": cursor_pos,
+            "anchor_text": anchor_text,
+            "alternatives": alternatives,  # Array of {text, confidence, reasoning}
+            "current_index": 0,  # Start with first alternative
+            "type": suggestion_type,
+            "reasoning": result.get("reasoning", "AI suggestion")
         }
 
         await websocket.send_text(json.dumps(response))
-        print(f"✅ Sent inline suggestion: '{suggested_text}'")
+
+        if alternatives:
+            alt_count = len(alternatives)
+            first_text = alternatives[0]["text"]
+            print(f"✅ Sent {alt_count} alternative(s): '{first_text}' (+{alt_count-1} more)")
+        else:
+            print(f"⚠️ No suggestions generated")
 
     @staticmethod
     async def _handle_multi_agent_analysis(websocket: WebSocket):

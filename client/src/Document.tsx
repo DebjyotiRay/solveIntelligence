@@ -1,16 +1,18 @@
 import Editor from "./internal/Editor";
-import { InlineSuggestion, PanelSuggestion } from "./types/PatentTypes";
+import { InlineSuggestionResponse, PanelSuggestion } from "./types/PatentTypes";
+import { CursorStyleSuggestion } from "./extensions/CursorStyleSuggestions";
 
 export interface DocumentProps {
   onContentChange: (content: string) => void;
   content: string;
   documentId: number;
   versionNumber: number;
-  // Inline suggestion props
+  // Cursor-style inline suggestion props
   onInlineSuggestionRequest?: (content: string, pos: number, before: string, after: string) => void;
-  pendingSuggestion?: InlineSuggestion | null;
-  onAcceptSuggestion?: (suggestion: InlineSuggestion) => void;
-  onRejectSuggestion?: () => void;
+  pendingSuggestion?: InlineSuggestionResponse | null;
+  onAcceptSuggestion?: (suggestion: CursorStyleSuggestion, acceptedText: string) => void;
+  onRejectSuggestion?: (suggestion: CursorStyleSuggestion) => void;
+  onCycleAlternative?: (suggestion: CursorStyleSuggestion, newIndex: number) => void;
   // Panel suggestion props - simplified to just show location
   activePanelSuggestion?: PanelSuggestion | null;
   onDismissPanelSuggestion?: () => void;
@@ -25,6 +27,7 @@ export default function Document({
   pendingSuggestion,
   onAcceptSuggestion,
   onRejectSuggestion,
+  onCycleAlternative,
   activePanelSuggestion,
   onDismissPanelSuggestion
 }: DocumentProps) {
@@ -43,6 +46,7 @@ export default function Document({
         pendingSuggestion={pendingSuggestion}
         onAcceptSuggestion={onAcceptSuggestion}
         onRejectSuggestion={onRejectSuggestion}
+        onCycleAlternative={onCycleAlternative}
         activePanelSuggestion={activePanelSuggestion}
         onDismissPanelSuggestion={onDismissPanelSuggestion}
       />

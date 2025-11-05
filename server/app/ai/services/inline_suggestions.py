@@ -40,32 +40,41 @@ class InlineSuggestionsService:
         suggestion_type: str = "completion"
     ) -> Dict[str, Any]:
         """
-        Generate inline suggestion using simple 20-word context.
+        Generate MULTIPLE inline suggestions (Cursor/Copilot style).
 
-        SIMPLIFIED APPROACH:
-        - Uses only last 20 words before cursor (no full document analysis)
-        - Single AI call with focused prompt
-        - Basic validation (length, format)
+        ENHANCED APPROACH:
+        - Uses last 30 words before cursor for better context
+        - Generates 3 alternative suggestions with different styles
+        - Returns alternatives array for cycling with arrow keys
+        - Includes confidence and reasoning for each alternative
         """
 
         if not self.client:
             return {
-                "suggested_text": "",
+                "alternatives": [],
                 "reasoning": "API key not configured",
                 "confidence": 0.0
             }
 
         try:
-            # SIMPLIFIED: Use only last 20 words before cursor
-            words_before = context_before.split()[-20:]  # Last 20 words
+            # Use last 30 words before cursor for better context
+            words_before = context_before.split()[-30:]
             simple_context = " ".join(words_before)
 
-            # Simple, focused prompt
-            system_prompt = "You are a patent writing assistant. Complete the text with 5 natural words that fit the context."
-            user_prompt = f"Complete this text:\n\n{simple_context}"
+            # Enhanced prompt to generate 3 alternatives
+            system_prompt = """You are a legal document writing assistant specializing in contracts and agreements.
+Generate 3 different completions for the text, each with a different style:
+1. Formal legal language (precise, traditional)
+2. Clear and concise (modern, readable)
+3. Detailed and protective (comprehensive, risk-averse)
+
+Return ONLY a JSON array of 3 strings, nothing else. Example format:
+["formal completion", "concise completion", "detailed completion"]"""
+
+            user_prompt = f"Complete this legal text with 5-10 words:\n\n{simple_context}"
 
             response = self.client.chat.completions.create(
-                model=self.model,  # GPT-3.5-turbo by default
+                model=self.model,
                 messages=[{
                     "role": "system",
                     "content": system_prompt
@@ -73,31 +82,76 @@ class InlineSuggestionsService:
                     "role": "user",
                     "content": user_prompt
                 }],
-                max_tokens=20,
-                temperature=0.3
+                max_tokens=150,  # More tokens for 3 alternatives
+                temperature=0.5,  # Slightly higher for variety
+                response_format={"type": "json_object"}  # Request JSON response
             )
 
-            suggested_text = response.choices[0].message.content.strip()
+            response_text = response.choices[0].message.content.strip()
 
-            # Basic validation: not too long, no markdown
-            if len(suggested_text.split()) > 10 or suggested_text.startswith('#'):
+            # Parse JSON response
+            import json
+            try:
+                # Try to parse as JSON object first
+                parsed = json.loads(response_text)
+                if isinstance(parsed, dict):
+                    # Extract array from dict
+                    alternatives_raw = (
+                        parsed.get("alternatives") or
+                        parsed.get("suggestions") or
+                        parsed.get("completions") or
+                        list(parsed.values())[0] if parsed else []
+                    )
+                else:
+                    alternatives_raw = parsed
+            except json.JSONDecodeError:
+                # Fallback: try to extract array from text
+                import re
+                array_match = re.search(r'\[.*\]', response_text, re.DOTALL)
+                if array_match:
+                    alternatives_raw = json.loads(array_match.group())
+                else:
+                    # Ultimate fallback: single suggestion
+                    alternatives_raw = [response_text]
+
+            # Validate and clean alternatives
+            alternatives = []
+            for alt_text in alternatives_raw[:3]:  # Max 3
+                cleaned = str(alt_text).strip().strip('"').strip("'")
+
+                # Validation: not too long, no markdown
+                if len(cleaned.split()) <= 15 and not cleaned.startswith('#'):
+                    alternatives.append({
+                        "text": cleaned,
+                        "confidence": 0.85 - (len(alternatives) * 0.05),  # Decreasing confidence
+                        "reasoning": [
+                            "Formal legal style",
+                            "Clear and concise",
+                            "Detailed and protective"
+                        ][len(alternatives)] if len(alternatives) < 3 else "Alternative completion"
+                    })
+
+            # If no valid alternatives, return empty
+            if not alternatives:
                 return {
-                    "suggested_text": "",
-                    "reasoning": "Suggestion too long or invalid format",
+                    "alternatives": [],
+                    "reasoning": "No valid suggestions generated",
                     "confidence": 0.0
                 }
 
             return {
-                "suggested_text": suggested_text,
-                "reasoning": f"AI completion using {self.model}",
-                "confidence": 0.80,
+                "alternatives": alternatives,
+                "reasoning": f"Generated {len(alternatives)} alternatives using {self.model}",
+                "confidence": alternatives[0]["confidence"],
                 "model_used": self.model
             }
 
         except Exception as e:
             print(f"❌ OpenAI API error in inline suggestions: {e}")
+            import traceback
+            traceback.print_exc()
             return {
-                "suggested_text": "",
+                "alternatives": [],
                 "reasoning": "AI service temporarily unavailable",
                 "confidence": 0.0
             }

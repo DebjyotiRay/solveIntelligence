@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { 
-  AnalysisResult, 
-  StreamUpdate, 
-  InlineSuggestionResponse 
+import {
+  AnalysisResult,
+  StreamUpdate,
+  InlineSuggestionResponse
 } from '../types/PatentTypes';
+import type { CursorStyleSuggestion } from '../extensions/CursorStyleSuggestions';
 
 type WebSocketResponse = AnalysisResult | InlineSuggestionResponse;
 
@@ -17,8 +18,9 @@ interface UseWebSocketReturn {
   streamUpdates: StreamUpdate[];
   requestInlineSuggestion: (content: string, cursorPos: number, contextBefore: string, contextAfter: string, triggerType?: string, type?: 'completion' | 'improvement' | 'correction') => void;
   pendingSuggestion: InlineSuggestionResponse | null;
-  acceptInlineSuggestion: (suggestion: InlineSuggestionResponse) => void;
-  rejectInlineSuggestion: () => void;
+  acceptInlineSuggestion: (suggestion: CursorStyleSuggestion, acceptedText: string) => void;
+  rejectInlineSuggestion: (suggestion: CursorStyleSuggestion) => void;
+  cycleInlineSuggestion: (suggestion: CursorStyleSuggestion, newIndex: number) => void;
   clearPendingSuggestion: () => void;
 }
 
@@ -238,15 +240,35 @@ export const useSocket = (): UseWebSocketReturn => {
     }));
   };
 
-  const acceptInlineSuggestion = (suggestion: InlineSuggestionResponse) => {
-    console.log('✅ Accepting inline suggestion:', suggestion.suggested_text);
+  const acceptInlineSuggestion = (suggestion: CursorStyleSuggestion, acceptedText: string) => {
+    console.log('✅ Accepting inline suggestion:', acceptedText);
     setPendingSuggestion(null);
-    // The editor will handle applying the suggestion to the content
+
+    // TODO: Send feedback to backend for memory/learning
+    // wsRef.current?.send(JSON.stringify({
+    //   type: 'suggestion_feedback',
+    //   suggestion_id: suggestion.id,
+    //   action: 'accepted',
+    //   accepted_text: acceptedText
+    // }));
   };
 
-  const rejectInlineSuggestion = () => {
-    console.log('❌ Rejecting inline suggestion');
+  const rejectInlineSuggestion = (suggestion: CursorStyleSuggestion) => {
+    console.log('❌ Rejecting inline suggestion:', suggestion.id);
     setPendingSuggestion(null);
+
+    // TODO: Send feedback to backend for memory/learning
+    // wsRef.current?.send(JSON.stringify({
+    //   type: 'suggestion_feedback',
+    //   suggestion_id: suggestion.id,
+    //   action: 'rejected'
+    // }));
+  };
+
+  const cycleInlineSuggestion = (suggestion: CursorStyleSuggestion, newIndex: number) => {
+    console.log(`🔄 Cycled to alternative ${newIndex + 1}/${suggestion.alternatives.length}`);
+    // Cycling is handled in the editor extension, no need to update state here
+    // Just log for analytics/debugging
   };
 
   const clearPendingSuggestion = () => {
@@ -265,6 +287,7 @@ export const useSocket = (): UseWebSocketReturn => {
     pendingSuggestion,
     acceptInlineSuggestion,
     rejectInlineSuggestion,
+    cycleInlineSuggestion,
     clearPendingSuggestion
   };
 };

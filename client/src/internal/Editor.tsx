@@ -1,20 +1,21 @@
 import { useEffect, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { InlineSuggestions } from "../extensions/InlineSuggestions";
-import { InlineSuggestion, PanelSuggestion } from "../types/PatentTypes";
-import "../inline-suggestions.css";
+import { CursorStyleSuggestions, CursorStyleSuggestion } from "../extensions/CursorStyleSuggestions";
+import { InlineSuggestionResponse, PanelSuggestion } from "../types/PatentTypes";
+import "../cursor-style-suggestions.css";
 
 export interface EditorProps {
   handleEditorChange: (content: string) => void;
   content: string;
   documentId: number;
   versionNumber: number;
-  // Inline suggestion props
+  // Cursor-style inline suggestion props
   onInlineSuggestionRequest?: (content: string, pos: number, before: string, after: string, triggerType?: string) => void;
-  pendingSuggestion?: InlineSuggestion | null;
-  onAcceptSuggestion?: (suggestion: InlineSuggestion) => void;
-  onRejectSuggestion?: () => void;
+  pendingSuggestion?: InlineSuggestionResponse | null;
+  onAcceptSuggestion?: (suggestion: CursorStyleSuggestion, acceptedText: string) => void;
+  onRejectSuggestion?: (suggestion: CursorStyleSuggestion) => void;
+  onCycleAlternative?: (suggestion: CursorStyleSuggestion, newIndex: number) => void;
   // Panel suggestion props - simplified to just show location
   activePanelSuggestion?: PanelSuggestion | null;
   onDismissPanelSuggestion?: () => void;
@@ -29,18 +30,30 @@ export default function Editor({
   pendingSuggestion,
   onAcceptSuggestion,
   onRejectSuggestion,
+  onCycleAlternative,
   activePanelSuggestion,
   onDismissPanelSuggestion
 }: EditorProps) {
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [cursorPosition, setCursorPosition] = useState<{x: number, y: number} | null>(null);
 
   const editor = useEditor({
     content: content,
     extensions: [
       StarterKit,
-      InlineSuggestions.configure({
+      CursorStyleSuggestions.configure({
         onSuggestionRequest: onInlineSuggestionRequest || (() => {}),
+        onSuggestionAccepted: (suggestion, acceptedText) => {
+          console.log('✅ Suggestion accepted:', acceptedText);
+          onAcceptSuggestion?.(suggestion, acceptedText);
+        },
+        onSuggestionRejected: (suggestion) => {
+          console.log('❌ Suggestion rejected');
+          onRejectSuggestion?.(suggestion);
+        },
+        onCycleAlternative: (suggestion, newIndex) => {
+          console.log(`🔄 Cycled to alternative ${newIndex + 1}/${suggestion.alternatives.length}`);
+          onCycleAlternative?.(suggestion, newIndex);
+        },
         debounceMs: 1500,
         documentKey: `${documentId}-${versionNumber}`
       })
@@ -74,23 +87,29 @@ export default function Editor({
     }
   }, [editor, activePanelSuggestion]);
 
-  // Handle keyboard shortcuts for inline suggestions only
+  // When suggestion arrives from backend, push it to the editor plugin
+  useEffect(() => {
+    if (editor && pendingSuggestion && pendingSuggestion.alternatives && pendingSuggestion.alternatives.length > 0) {
+      // Convert backend response to CursorStyleSuggestion format
+      const cursorSuggestion: CursorStyleSuggestion = {
+        id: pendingSuggestion.suggestion_id,
+        position: pendingSuggestion.position,
+        alternatives: pendingSuggestion.alternatives,
+        currentIndex: pendingSuggestion.current_index || 0,
+        anchorText: pendingSuggestion.anchor_text
+      };
+
+      // Push suggestion to editor plugin
+      editor.chain().focus().setSuggestion(cursorSuggestion).run();
+    } else if (editor && !pendingSuggestion) {
+      // Clear suggestion if null
+      editor.chain().clearSuggestion().run();
+    }
+  }, [editor, pendingSuggestion]);
+
+  // Handle panel suggestion Escape key
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Only handle inline suggestions, not panel suggestions
-      if (pendingSuggestion && !activePanelSuggestion) {
-        if (event.key === 'Tab') {
-          event.preventDefault();
-          if (editor && pendingSuggestion.suggested_text) {
-            editor.chain().focus().insertContentAt(editor.state.selection.from, pendingSuggestion.suggested_text).run();
-          }
-          onAcceptSuggestion?.(pendingSuggestion);
-        } else if (event.key === 'Escape') {
-          event.preventDefault();
-          onRejectSuggestion?.();
-        }
-      }
-      
       // Dismiss panel suggestion info on Escape
       if (activePanelSuggestion && event.key === 'Escape') {
         event.preventDefault();
@@ -100,7 +119,7 @@ export default function Editor({
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [editor, pendingSuggestion, onAcceptSuggestion, onRejectSuggestion, activePanelSuggestion, onDismissPanelSuggestion]);
+  }, [activePanelSuggestion, onDismissPanelSuggestion]);
 
   useEffect(() => {
     if (editor && content !== editor.getHTML()) {
@@ -110,46 +129,13 @@ export default function Editor({
     }
   }, [content, editor]);
 
-  useEffect(() => {
-    if (editor && pendingSuggestion) {
-      const { view } = editor;
-      const coords = view.coordsAtPos(view.state.selection.from);
-      const editorRect = view.dom.getBoundingClientRect();
-      
-      setCursorPosition({
-        x: coords.left - editorRect.left,
-        y: coords.top - editorRect.top - 2
-      });
-    } else {
-      setCursorPosition(null);
-    }
-  }, [editor, pendingSuggestion]);
-
-
   return (
     <div className="relative">
       {isLoading && <div>Loading...</div>}
       <EditorContent editor={editor}></EditorContent>
-      
-      {/* Display inline suggestion at cursor position */}
-      {pendingSuggestion && cursorPosition && !activePanelSuggestion && (
-        <div
-          className="absolute pointer-events-none z-10"
-          style={{
-            left: cursorPosition.x,
-            top: cursorPosition.y,
-            color: '#888',
-            fontStyle: 'italic',
-            opacity: 0.6,
-            fontSize: 'inherit',
-            fontFamily: 'inherit',
-            whiteSpace: 'nowrap'
-          }}
-          title="Tab to accept, Esc to reject"
-        >
-          {pendingSuggestion.suggested_text}
-        </div>
-      )}
+
+      {/* Ghost text is now rendered inline by CursorStyleSuggestions extension */}
+      {/* No need for separate overlay - the extension handles everything */}
 
       {/* Panel Suggestion Info Overlay - Shows what to fix manually */}
       {activePanelSuggestion && (

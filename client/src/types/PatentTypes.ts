@@ -15,21 +15,35 @@ export interface PatentIssue {
   };
 }
 
+// Cursor-style suggestion alternative
+export interface SuggestionAlternative {
+  text: string;
+  confidence: number;
+  reasoning: string;
+}
+
+// Single inline suggestion (old format, for backward compatibility)
 export interface InlineSuggestion {
   suggested_text: string;
   reasoning?: string;
   [key: string]: unknown;
 }
 
+// Cursor-style suggestion response with multiple alternatives
 export interface InlineSuggestionResponse {
   status: 'inline_suggestion';
   suggestion_id: string;
-  original_text: string;
-  suggested_text: string;
-  position: { from: number; to: number };
-  confidence: number;
-  reasoning: string;
+  position: number;  // Cursor position
+  anchor_text: string;  // Last 50 chars before cursor (for validation)
+  alternatives: SuggestionAlternative[];  // Array of alternatives to cycle through
+  current_index: number;  // Which alternative is currently shown (0-indexed)
   type: 'completion' | 'improvement' | 'correction';
+  reasoning: string;  // Overall reasoning for the suggestion
+
+  // Legacy fields (for backward compatibility)
+  original_text?: string;
+  suggested_text?: string;
+  confidence?: number;
 }
 
 export interface PanelSuggestion {
