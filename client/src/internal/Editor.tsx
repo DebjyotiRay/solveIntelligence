@@ -89,7 +89,15 @@ export default function Editor({
 
   // When suggestion arrives from backend, push it to the editor plugin
   useEffect(() => {
+    console.log('📥 Editor received pendingSuggestion:', pendingSuggestion);
+
     if (editor && pendingSuggestion && pendingSuggestion.alternatives && pendingSuggestion.alternatives.length > 0) {
+      console.log('✅ Converting to CursorStyleSuggestion format:', {
+        alternatives_count: pendingSuggestion.alternatives.length,
+        position: pendingSuggestion.position,
+        first_text: pendingSuggestion.alternatives[0].text
+      });
+
       // Convert backend response to CursorStyleSuggestion format
       const cursorSuggestion: CursorStyleSuggestion = {
         id: pendingSuggestion.suggestion_id,
@@ -99,10 +107,13 @@ export default function Editor({
         anchorText: pendingSuggestion.anchor_text
       };
 
+      console.log('🎯 Pushing suggestion to editor plugin...');
       // Push suggestion to editor plugin
       editor.chain().focus().setSuggestion(cursorSuggestion).run();
+      console.log('✅ Suggestion pushed successfully');
     } else if (editor && !pendingSuggestion) {
       // Clear suggestion if null
+      console.log('🧹 Clearing suggestion from editor');
       editor.chain().clearSuggestion().run();
     }
   }, [editor, pendingSuggestion]);

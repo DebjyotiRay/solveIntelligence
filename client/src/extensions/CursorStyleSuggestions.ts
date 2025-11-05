@@ -1,17 +1,17 @@
 /**
- * Cursor-Style Inline Suggestions Extension for TipTap
+ * Cursor-Style Inline Suggestions - SIMPLIFIED VERSION
  *
- * Features:
- * - Ghost text rendered inline (gray, italic)
- * - Multiple alternatives with arrow key cycling
+ * This extension triggers suggestion requests and displays them as inline decorations.
+ * Key features:
+ * - Auto-triggers on typing (debounced)
+ * - Shows ghost text inline (not overlay)
  * - Tab to accept, Esc to reject
- * - Suggestion counter (1/3)
- * - Auto-expire on document changes
+ * - Arrow keys to cycle alternatives
  */
 
 import { Extension } from '@tiptap/core';
-import { Plugin, PluginKey } from '@tiptap/pm/state';
-import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import { Plugin, PluginKey, EditorState } from '@tiptap/pm/state';
+import { Decoration, DecorationSet, EditorView } from '@tiptap/pm/view';
 
 export interface SuggestionAlternative {
   text: string;
@@ -21,14 +21,14 @@ export interface SuggestionAlternative {
 
 export interface CursorStyleSuggestion {
   id: string;
-  position: number;  // Where to insert ghost text
+  position: number;
   alternatives: SuggestionAlternative[];
-  currentIndex: number;  // Which alternative is shown
-  anchorText: string;  // Last 50 chars before position (for validation)
+  currentIndex: number;
+  anchorText: string;
 }
 
 interface CursorStyleSuggestionsOptions {
-  onSuggestionRequest: (content: string, pos: number, before: string, after: string) => void;
+  onSuggestionRequest: (content: string, pos: number, before: string, after: string, triggerType?: string) => void;
   onSuggestionAccepted: (suggestion: CursorStyleSuggestion, acceptedText: string) => void;
   onSuggestionRejected: (suggestion: CursorStyleSuggestion) => void;
   onCycleAlternative: (suggestion: CursorStyleSuggestion, newIndex: number) => void;
@@ -40,6 +40,8 @@ interface PluginState {
   suggestion: CursorStyleSuggestion | null;
   decorations: DecorationSet;
 }
+
+const pluginKey = new PluginKey<PluginState>('cursorStyleSuggestions');
 
 export const CursorStyleSuggestions = Extension.create<CursorStyleSuggestionsOptions>({
   name: 'cursorStyleSuggestions',
@@ -55,80 +57,34 @@ export const CursorStyleSuggestions = Extension.create<CursorStyleSuggestionsOpt
   },
 
   addProseMirrorPlugins() {
-    const {
-      onSuggestionRequest,
-      onSuggestionAccepted,
-      onSuggestionRejected,
-      onCycleAlternative,
-      debounceMs,
-      documentKey
-    } = this.options;
-
+    const { onSuggestionRequest, onSuggestionAccepted, onSuggestionRejected, onCycleAlternative, debounceMs, documentKey } = this.options;
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     let currentDocKey: string | null = null;
 
-    const pluginKey = new PluginKey<PluginState>('cursorStyleSuggestions');
-
-    // Helper: Should trigger suggestion?
     const shouldTriggerSuggestion = (before: string, content: string) => {
       if (content.trim().length < 10) return false;
-
-      // Trigger after space
       if (before.endsWith(' ')) return true;
-
-      // Trigger after punctuation + space
       if (/[.!?]\s$/.test(before)) return true;
-
-      // Trigger after legal keywords
-      if (/(shall|hereby|pursuant to|notwithstanding|whereas)\s$/i.test(before)) return true;
-
+      if (/(shall|hereby|pursuant to|whereas)\s$/i.test(before)) return true;
       return false;
     };
 
-    // Helper: Create ghost text decoration
-    const createGhostTextDecoration = (
-      suggestion: CursorStyleSuggestion,
-      position: number
-    ): Decoration => {
-      const currentAlt = suggestion.alternatives[suggestion.currentIndex];
-      const ghostText = currentAlt.text;
+    const createGhostTextWidget = (text: string, alternativeIndex: number, totalAlternatives: number) => {
+      const wrapper = document.createElement('span');
+      wrapper.className = 'cursor-ghost-text-wrapper';
+      wrapper.style.position = 'relative';
+      wrapper.style.display = 'inline';
 
-      // Create DOM node for ghost text
       const ghostSpan = document.createElement('span');
       ghostSpan.className = 'cursor-ghost-text';
-      ghostSpan.textContent = ghostText;
-      ghostSpan.setAttribute('data-suggestion-id', suggestion.id);
-
-      // Inline styles for ghost text
+      ghostSpan.textContent = text;
       ghostSpan.style.color = 'rgba(128, 128, 128, 0.5)';
       ghostSpan.style.fontStyle = 'italic';
       ghostSpan.style.pointerEvents = 'none';
       ghostSpan.style.userSelect = 'none';
 
-      return Decoration.widget(position, ghostSpan, {
-        side: 1,  // Place after cursor
-        key: 'ghost-text'
-      });
-    };
-
-    // Helper: Create suggestion hint decoration (keyboard shortcuts)
-    const createHintDecoration = (
-      suggestion: CursorStyleSuggestion,
-      position: number
-    ): Decoration => {
       const hint = document.createElement('span');
       hint.className = 'cursor-suggestion-hint';
-
-      const hasMultiple = suggestion.alternatives.length > 1;
-      const counter = `${suggestion.currentIndex + 1}/${suggestion.alternatives.length}`;
-
-      hint.innerHTML = `
-        <span class="hint-key">⇥ Tab</span> to accept
-        ${hasMultiple ? `<span class="hint-key">→</span> Next (${counter})` : ''}
-        <span class="hint-key">Esc</span> to dismiss
-      `;
-
-      // Positioning and styling
       hint.style.position = 'absolute';
       hint.style.bottom = '100%';
       hint.style.left = '0';
@@ -142,10 +98,16 @@ export const CursorStyleSuggestions = Extension.create<CursorStyleSuggestionsOpt
       hint.style.zIndex = '1000';
       hint.style.pointerEvents = 'none';
 
-      return Decoration.widget(position, hint, {
-        side: 1,
-        key: 'suggestion-hint'
-      });
+      if (totalAlternatives > 1) {
+        hint.innerHTML = `<kbd style="background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 3px; margin: 0 2px;">Tab</kbd> accept <kbd style="background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 3px; margin: 0 2px;">→</kbd> next (${alternativeIndex + 1}/${totalAlternatives}) <kbd style="background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 3px; margin: 0 2px;">Esc</kbd> dismiss`;
+      } else {
+        hint.innerHTML = `<kbd style="background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 3px; margin: 0 2px;">Tab</kbd> accept <kbd style="background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 3px; margin: 0 2px;">Esc</kbd> dismiss`;
+      }
+
+      wrapper.appendChild(ghostSpan);
+      wrapper.appendChild(hint);
+
+      return wrapper;
     };
 
     return [
@@ -160,59 +122,43 @@ export const CursorStyleSuggestions = Extension.create<CursorStyleSuggestionsOpt
             };
           },
 
-          apply(tr, state, oldState, newState): PluginState {
-            // Check if suggestion should be expired due to document changes
-            if (state.suggestion) {
-              const docChanged = !oldState.doc.eq(newState.doc);
-              const suggestionPos = state.suggestion.position;
-
-              // If document changed around suggestion position, expire it
-              if (docChanged) {
-                const textBefore = newState.doc.textBetween(
-                  Math.max(0, suggestionPos - 50),
-                  suggestionPos
+          apply(tr, state): PluginState {
+            // Check for meta updates (setting/clearing suggestion)
+            const meta = tr.getMeta(pluginKey);
+            if (meta !== undefined) {
+              if (meta === null) {
+                // Clear suggestion
+                return {
+                  suggestion: null,
+                  decorations: DecorationSet.empty
+                };
+              } else {
+                // Set new suggestion
+                const suggestion = meta as CursorStyleSuggestion;
+                const currentAlt = suggestion.alternatives[suggestion.currentIndex];
+                const widget = createGhostTextWidget(
+                  currentAlt.text,
+                  suggestion.currentIndex,
+                  suggestion.alternatives.length
                 );
 
-                // If anchor text doesn't match, suggestion is stale
-                if (textBefore !== state.suggestion.anchorText) {
-                  return {
-                    suggestion: null,
-                    decorations: DecorationSet.empty
-                  };
-                }
+                const decoration = Decoration.widget(suggestion.position, widget, {
+                  side: 1,
+                  key: 'ghost-text'
+                });
+
+                return {
+                  suggestion,
+                  decorations: DecorationSet.create(tr.doc, [decoration])
+                };
               }
             }
 
-            // Get suggestion from transaction metadata
-            const newSuggestion = tr.getMeta(pluginKey);
-
-            if (newSuggestion === null) {
-              // Clear suggestion
-              return {
-                suggestion: null,
-                decorations: DecorationSet.empty
-              };
-            }
-
-            if (newSuggestion) {
-              // Update suggestion
-              const decorations = DecorationSet.create(newState.doc, [
-                createGhostTextDecoration(newSuggestion, newSuggestion.position),
-                createHintDecoration(newSuggestion, newSuggestion.position)
-              ]);
-
-              return {
-                suggestion: newSuggestion,
-                decorations
-              };
-            }
-
-            // Map existing decorations through changes
+            // Map decorations through document changes
             if (state.suggestion) {
-              const decorations = state.decorations.map(tr.mapping, tr.doc);
               return {
                 ...state,
-                decorations
+                decorations: state.decorations.map(tr.mapping, tr.doc)
               };
             }
 
@@ -231,19 +177,20 @@ export const CursorStyleSuggestions = Extension.create<CursorStyleSuggestionsOpt
             if (newDocKey !== currentDocKey) {
               currentDocKey = newDocKey;
               if (debounceTimer) clearTimeout(debounceTimer);
-
-              // Clear existing suggestion
-              view.dispatch(
-                view.state.tr.setMeta(pluginKey, null)
-              );
-
+              view.dispatch(view.state.tr.setMeta(pluginKey, null));
               return false;
             }
 
             // Clear existing timer
             if (debounceTimer) clearTimeout(debounceTimer);
 
-            // Set new timer for suggestion request
+            // Clear any existing suggestion when typing
+            const currentState = pluginKey.getState(view.state);
+            if (currentState?.suggestion) {
+              view.dispatch(view.state.tr.setMeta(pluginKey, null));
+            }
+
+            // Set new timer
             debounceTimer = setTimeout(() => {
               const { state } = view;
               const pos = state.selection.from;
@@ -251,7 +198,7 @@ export const CursorStyleSuggestions = Extension.create<CursorStyleSuggestionsOpt
               const contextAfter = state.doc.textBetween(pos, Math.min(state.doc.content.size, pos + 100));
 
               if (shouldTriggerSuggestion(contextBefore, state.doc.textContent)) {
-                onSuggestionRequest(state.doc.textContent, pos, contextBefore, contextAfter);
+                onSuggestionRequest(state.doc.textContent, pos, contextBefore, contextAfter, 'completion');
               }
             }, debounceMs);
 
@@ -260,88 +207,48 @@ export const CursorStyleSuggestions = Extension.create<CursorStyleSuggestionsOpt
 
           handleKeyDown(view, event) {
             const state = pluginKey.getState(view.state);
-
             if (!state?.suggestion) return false;
 
             const suggestion = state.suggestion;
 
-            // Tab: Accept suggestion
+            // Tab: Accept
             if (event.key === 'Tab' && !event.shiftKey) {
               event.preventDefault();
-
               const acceptedText = suggestion.alternatives[suggestion.currentIndex].text;
-
-              // Insert text at position
               const tr = view.state.tr.insertText(acceptedText, suggestion.position);
-
-              // Clear suggestion
               tr.setMeta(pluginKey, null);
-
               view.dispatch(tr);
-
-              // Notify parent
               onSuggestionAccepted(suggestion, acceptedText);
-
               return true;
             }
 
-            // Escape: Reject suggestion
+            // Escape: Reject
             if (event.key === 'Escape') {
               event.preventDefault();
-
-              // Clear suggestion
-              view.dispatch(
-                view.state.tr.setMeta(pluginKey, null)
-              );
-
-              // Notify parent
+              view.dispatch(view.state.tr.setMeta(pluginKey, null));
               onSuggestionRejected(suggestion);
-
               return true;
             }
 
-            // Arrow Right: Cycle to next alternative
+            // Arrow Right: Next alternative
             if (event.key === 'ArrowRight' && suggestion.alternatives.length > 1) {
               event.preventDefault();
-
               const newIndex = (suggestion.currentIndex + 1) % suggestion.alternatives.length;
-              const updatedSuggestion: CursorStyleSuggestion = {
-                ...suggestion,
-                currentIndex: newIndex
-              };
-
-              // Update decoration
-              view.dispatch(
-                view.state.tr.setMeta(pluginKey, updatedSuggestion)
-              );
-
-              // Notify parent
+              const updatedSuggestion = { ...suggestion, currentIndex: newIndex };
+              view.dispatch(view.state.tr.setMeta(pluginKey, updatedSuggestion));
               onCycleAlternative(updatedSuggestion, newIndex);
-
               return true;
             }
 
-            // Arrow Left: Cycle to previous alternative
+            // Arrow Left: Previous alternative
             if (event.key === 'ArrowLeft' && suggestion.alternatives.length > 1) {
               event.preventDefault();
-
               const newIndex = suggestion.currentIndex === 0
                 ? suggestion.alternatives.length - 1
                 : suggestion.currentIndex - 1;
-
-              const updatedSuggestion: CursorStyleSuggestion = {
-                ...suggestion,
-                currentIndex: newIndex
-              };
-
-              // Update decoration
-              view.dispatch(
-                view.state.tr.setMeta(pluginKey, updatedSuggestion)
-              );
-
-              // Notify parent
+              const updatedSuggestion = { ...suggestion, currentIndex: newIndex };
+              view.dispatch(view.state.tr.setMeta(pluginKey, updatedSuggestion));
               onCycleAlternative(updatedSuggestion, newIndex);
-
               return true;
             }
 
@@ -360,7 +267,6 @@ export const CursorStyleSuggestions = Extension.create<CursorStyleSuggestionsOpt
     ];
   },
 
-  // Manual trigger via Cmd+Space
   addKeyboardShortcuts() {
     return {
       'Mod-Space': () => {
@@ -376,12 +282,10 @@ export const CursorStyleSuggestions = Extension.create<CursorStyleSuggestionsOpt
     };
   },
 
-  // Public methods to control suggestion from outside
   addCommands() {
     return {
       setSuggestion: (suggestion: CursorStyleSuggestion | null) => ({ tr, dispatch }) => {
         if (dispatch) {
-          const pluginKey = new PluginKey<PluginState>('cursorStyleSuggestions');
           tr.setMeta(pluginKey, suggestion);
         }
         return true;
@@ -389,7 +293,6 @@ export const CursorStyleSuggestions = Extension.create<CursorStyleSuggestionsOpt
 
       clearSuggestion: () => ({ tr, dispatch }) => {
         if (dispatch) {
-          const pluginKey = new PluginKey<PluginState>('cursorStyleSuggestions');
           tr.setMeta(pluginKey, null);
         }
         return true;

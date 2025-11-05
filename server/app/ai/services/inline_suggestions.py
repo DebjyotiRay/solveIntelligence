@@ -68,8 +68,8 @@ Generate 3 different completions for the text, each with a different style:
 2. Clear and concise (modern, readable)
 3. Detailed and protective (comprehensive, risk-averse)
 
-Return ONLY a JSON array of 3 strings, nothing else. Example format:
-["formal completion", "concise completion", "detailed completion"]"""
+Return ONLY valid JSON with an "alternatives" array of 3 strings. Example:
+{"alternatives": ["formal completion", "concise completion", "detailed completion"]}"""
 
             user_prompt = f"Complete this legal text with 5-10 words:\n\n{simple_context}"
 
@@ -83,8 +83,7 @@ Return ONLY a JSON array of 3 strings, nothing else. Example format:
                     "content": user_prompt
                 }],
                 max_tokens=150,  # More tokens for 3 alternatives
-                temperature=0.5,  # Slightly higher for variety
-                response_format={"type": "json_object"}  # Request JSON response
+                temperature=0.5  # Slightly higher for variety
             )
 
             response_text = response.choices[0].message.content.strip()
