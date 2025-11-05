@@ -70,44 +70,41 @@ export const CursorStyleSuggestions = Extension.create<CursorStyleSuggestionsOpt
     };
 
     const createGhostTextWidget = (text: string, alternativeIndex: number, totalAlternatives: number) => {
-      const wrapper = document.createElement('span');
-      wrapper.className = 'cursor-ghost-text-wrapper';
-      wrapper.style.position = 'relative';
-      wrapper.style.display = 'inline';
-
+      // SIMPLIFIED VERSION - Just ghost text, no fancy tooltip
       const ghostSpan = document.createElement('span');
       ghostSpan.className = 'cursor-ghost-text';
       ghostSpan.textContent = text;
-      ghostSpan.style.color = 'rgba(128, 128, 128, 0.5)';
-      ghostSpan.style.fontStyle = 'italic';
-      ghostSpan.style.pointerEvents = 'none';
-      ghostSpan.style.userSelect = 'none';
 
-      const hint = document.createElement('span');
-      hint.className = 'cursor-suggestion-hint';
-      hint.style.position = 'absolute';
-      hint.style.bottom = '100%';
-      hint.style.left = '0';
-      hint.style.marginBottom = '4px';
-      hint.style.padding = '4px 8px';
-      hint.style.background = 'rgba(0, 0, 0, 0.8)';
-      hint.style.color = 'white';
-      hint.style.fontSize = '11px';
-      hint.style.borderRadius = '4px';
-      hint.style.whiteSpace = 'nowrap';
-      hint.style.zIndex = '1000';
-      hint.style.pointerEvents = 'none';
+      // CRITICAL: Force inline styles to override any CSS
+      ghostSpan.style.cssText = `
+        color: rgba(128, 128, 128, 0.6) !important;
+        font-style: italic !important;
+        pointer-events: none !important;
+        user-select: none !important;
+        background: rgba(255, 255, 0, 0.1) !important;
+        padding: 2px 4px !important;
+        border-radius: 3px !important;
+        display: inline !important;
+        font-size: inherit !important;
+        font-family: inherit !important;
+        line-height: inherit !important;
+      `;
 
+      // Add counter badge if multiple alternatives
       if (totalAlternatives > 1) {
-        hint.innerHTML = `<kbd style="background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 3px; margin: 0 2px;">Tab</kbd> accept <kbd style="background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 3px; margin: 0 2px;">→</kbd> next (${alternativeIndex + 1}/${totalAlternatives}) <kbd style="background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 3px; margin: 0 2px;">Esc</kbd> dismiss`;
+        ghostSpan.setAttribute('data-alt-count', `${alternativeIndex + 1}/${totalAlternatives}`);
+        ghostSpan.title = `Press → for next alternative (${alternativeIndex + 1}/${totalAlternatives}). Tab to accept, Esc to dismiss.`;
       } else {
-        hint.innerHTML = `<kbd style="background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 3px; margin: 0 2px;">Tab</kbd> accept <kbd style="background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 3px; margin: 0 2px;">Esc</kbd> dismiss`;
+        ghostSpan.title = 'Press Tab to accept, Esc to dismiss';
       }
 
-      wrapper.appendChild(ghostSpan);
-      wrapper.appendChild(hint);
+      console.log('🎨 Created ghost text widget:', {
+        text: text.substring(0, 30),
+        visible: ghostSpan.style.display !== 'none',
+        color: ghostSpan.style.color
+      });
 
-      return wrapper;
+      return ghostSpan;
     };
 
     return [
@@ -128,6 +125,7 @@ export const CursorStyleSuggestions = Extension.create<CursorStyleSuggestionsOpt
             if (meta !== undefined) {
               if (meta === null) {
                 // Clear suggestion
+                console.log('🧹 Clearing suggestion from plugin state');
                 return {
                   suggestion: null,
                   decorations: DecorationSet.empty
@@ -136,6 +134,14 @@ export const CursorStyleSuggestions = Extension.create<CursorStyleSuggestionsOpt
                 // Set new suggestion
                 const suggestion = meta as CursorStyleSuggestion;
                 const currentAlt = suggestion.alternatives[suggestion.currentIndex];
+
+                console.log('🎨 Creating decoration widget for:', {
+                  text: currentAlt.text.substring(0, 50),
+                  position: suggestion.position,
+                  alternativeIndex: suggestion.currentIndex,
+                  totalAlternatives: suggestion.alternatives.length
+                });
+
                 const widget = createGhostTextWidget(
                   currentAlt.text,
                   suggestion.currentIndex,
@@ -147,9 +153,14 @@ export const CursorStyleSuggestions = Extension.create<CursorStyleSuggestionsOpt
                   key: 'ghost-text'
                 });
 
+                console.log('✅ Decoration created, adding to DecorationSet');
+
+                const decorations = DecorationSet.create(tr.doc, [decoration]);
+                console.log('✅ DecorationSet created with', decorations.find().length, 'decorations');
+
                 return {
                   suggestion,
-                  decorations: DecorationSet.create(tr.doc, [decoration])
+                  decorations
                 };
               }
             }
