@@ -10,8 +10,8 @@
  */
 
 import { Extension } from '@tiptap/core';
-import { Plugin, PluginKey, EditorState } from '@tiptap/pm/state';
-import { Decoration, DecorationSet, EditorView } from '@tiptap/pm/view';
+import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
 
 export interface SuggestionAlternative {
   text: string;
@@ -287,24 +287,6 @@ export const CursorStyleSuggestions = Extension.create<CursorStyleSuggestionsOpt
           const contextBefore = editor.state.doc.textBetween(Math.max(0, pos - 100), pos);
           const contextAfter = editor.state.doc.textBetween(pos, Math.min(editor.state.doc.content.size, pos + 100));
           this.options.onSuggestionRequest(editor.state.doc.textContent, pos, contextBefore, contextAfter);
-        }
-        return true;
-      }
-    };
-  },
-
-  addCommands() {
-    return {
-      setSuggestion: (suggestion: CursorStyleSuggestion | null) => ({ tr, dispatch }) => {
-        if (dispatch) {
-          tr.setMeta(pluginKey, suggestion);
-        }
-        return true;
-      },
-
-      clearSuggestion: () => ({ tr, dispatch }) => {
-        if (dispatch) {
-          tr.setMeta(pluginKey, null);
         }
         return true;
       }

@@ -240,14 +240,14 @@ export const useSocket = (): UseWebSocketReturn => {
     }));
   };
 
-  const acceptInlineSuggestion = (suggestion: CursorStyleSuggestion, acceptedText: string) => {
+  const acceptInlineSuggestion = (_suggestion: CursorStyleSuggestion, acceptedText: string) => {
     console.log('✅ Accepting inline suggestion:', acceptedText);
     setPendingSuggestion(null);
 
     // TODO: Send feedback to backend for memory/learning
     // wsRef.current?.send(JSON.stringify({
     //   type: 'suggestion_feedback',
-    //   suggestion_id: suggestion.id,
+    //   suggestion_id: _suggestion.id,
     //   action: 'accepted',
     //   accepted_text: acceptedText
     // }));

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import { PluginKey } from "@tiptap/pm/state";
 import { CursorStyleSuggestions, CursorStyleSuggestion } from "../extensions/CursorStyleSuggestions";
 import { InlineSuggestionResponse, PanelSuggestion } from "../types/PatentTypes";
 import "../cursor-style-suggestions.css";
@@ -108,13 +109,19 @@ export default function Editor({
       };
 
       console.log('🎯 Pushing suggestion to editor plugin...');
-      // Push suggestion to editor plugin
-      editor.chain().focus().setSuggestion(cursorSuggestion).run();
+      // Push suggestion to editor plugin via transaction
+      const { view } = editor;
+      const pluginKey = new PluginKey('cursorStyleSuggestions');
+      const tr = view.state.tr.setMeta(pluginKey, cursorSuggestion);
+      view.dispatch(tr);
       console.log('✅ Suggestion pushed successfully');
     } else if (editor && !pendingSuggestion) {
       // Clear suggestion if null
       console.log('🧹 Clearing suggestion from editor');
-      editor.chain().clearSuggestion().run();
+      const { view } = editor;
+      const pluginKey = new PluginKey('cursorStyleSuggestions');
+      const tr = view.state.tr.setMeta(pluginKey, null);
+      view.dispatch(tr);
     }
   }, [editor, pendingSuggestion]);
 
