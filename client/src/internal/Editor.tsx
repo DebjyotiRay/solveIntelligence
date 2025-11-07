@@ -36,7 +36,6 @@ export default function Editor({
   activePanelSuggestion,
   onDismissPanelSuggestion
 }: EditorProps) {
-  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [cursorPosition, setCursorPosition] = useState<{x: number, y: number} | null>(null);
   const [provider, setProvider] = useState<WebsocketProvider | null>(null);
   const [ydoc] = useState(() => new Y.Doc());
@@ -90,10 +89,6 @@ export default function Editor({
       }),
       CollaborationCursor.configure({
         provider: provider || undefined,
-        user: {
-          name: 'Anonymous',
-          color: '#958DF1',
-        },
       }),
       InlineSuggestions.configure({
         onSuggestionRequest: onInlineSuggestionRequest || (() => {}),
@@ -132,16 +127,14 @@ export default function Editor({
 
   // Load initial content only when document is empty (first user)
   useEffect(() => {
-    if (editor && provider && content && !isLoading) {
+    if (editor && provider && content) {
       // Only set content if the Yjs document is empty
       const yXmlFragment = ydoc.getXmlFragment('default');
       if (yXmlFragment.length === 0) {
-        setIsLoading(true);
         editor.commands.setContent(content);
-        setIsLoading(false);
       }
     }
-  }, [editor, provider, content, ydoc, isLoading]);
+  }, [editor, provider, content, ydoc]);
 
   // Handle keyboard shortcuts for inline suggestions only
   useEffect(() => {
@@ -216,7 +209,6 @@ export default function Editor({
 
   return (
     <div className="relative">
-      {isLoading && <div>Loading...</div>}
       
       {/* Connected Users Indicator */}
       {connectedUsers.length > 0 && (

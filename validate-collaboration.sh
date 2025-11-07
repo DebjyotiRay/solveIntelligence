@@ -92,8 +92,23 @@ fi
 echo "✅ Checking if collaboration server can start..."
 cd collaboration
 
-# Check if port is already in use (server might already be running)
-if lsof -Pi :1234 -sTCP:LISTEN -t >/dev/null 2>&1 ; then
+# Check if port is already in use (using netstat or ss as fallback)
+PORT_IN_USE=false
+if command -v lsof >/dev/null 2>&1; then
+    if lsof -Pi :1234 -sTCP:LISTEN -t >/dev/null 2>&1; then
+        PORT_IN_USE=true
+    fi
+elif command -v ss >/dev/null 2>&1; then
+    if ss -ltn | grep -q ':1234 '; then
+        PORT_IN_USE=true
+    fi
+elif command -v netstat >/dev/null 2>&1; then
+    if netstat -ltn 2>/dev/null | grep -q ':1234 '; then
+        PORT_IN_USE=true
+    fi
+fi
+
+if [ "$PORT_IN_USE" = true ]; then
     echo "   ✓ Collaboration server already running on port 1234"
 else
     # Try to start the server
