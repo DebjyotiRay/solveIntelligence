@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import Collaboration from "@tiptap/extension-collaboration";
-import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
 import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
 import { InlineSuggestions } from "../extensions/InlineSuggestions";
@@ -38,10 +36,24 @@ export default function Editor({
 }: EditorProps) {
   const [cursorPosition, setCursorPosition] = useState<{x: number, y: number} | null>(null);
   const [provider, setProvider] = useState<WebsocketProvider | null>(null);
-  const [ydoc] = useState(() => new Y.Doc());
+  const [ydoc, setYdoc] = useState<Y.Doc | null>(null);
 
   // Initialize collaboration provider
   useEffect(() => {
+    console.log('=== Collaboration Setup Effect ===');
+    console.log('documentId:', documentId, 'type:', typeof documentId);
+    console.log('versionNumber:', versionNumber, 'type:', typeof versionNumber);
+    
+    // DISABLE COLLABORATION FOR NOW TO TEST
+    console.log('COLLABORATION DISABLED FOR DEBUGGING');
+    return;
+
+    // Don't connect if we don't have valid document info
+    if (!documentId || !versionNumber) {
+      console.log('Skipping collaboration setup - missing documentId or versionNumber', { documentId, versionNumber });
+      return;
+    }
+
     // Generate a random color for this user
     const getRandomColor = () => {
       const colors = ['#958DF1', '#F98181', '#FBBC88', '#FAF594', '#70CFF8', '#94FADB', '#B9F18D'];
@@ -54,17 +66,26 @@ export default function Editor({
       return names[Math.floor(Math.random() * names.length)];
     };
 
+    // Create new Yjs document for this room
+    const doc = new Y.Doc();
+    setYdoc(doc);
+
     const roomName = `document-${documentId}-v${versionNumber}`;
+    console.log('!!! CREATING PROVIDER WITH ROOM NAME:', roomName);
+    console.log('Room name length:', roomName.length);
+    console.log('Room name charCodes:', Array.from(roomName).map(c => c.charCodeAt(0)));
     
     // Connect to Hocuspocus server
     const websocketProvider = new WebsocketProvider(
       'ws://localhost:1234',
       roomName,
-      ydoc,
+      doc,
       {
         connect: true,
       }
     );
+
+    console.log('Provider created, room:', websocketProvider.roomname);
 
     websocketProvider.awareness.setLocalStateField('user', {
       name: getRandomName(),
@@ -74,32 +95,26 @@ export default function Editor({
     setProvider(websocketProvider);
 
     return () => {
+      console.log('Destroying provider for room:', roomName);
       websocketProvider.destroy();
+      doc.destroy();
     };
-  }, [documentId, versionNumber, ydoc]);
+  }, [documentId, versionNumber]);
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({
-        // Disable history extension as Collaboration handles it
-        history: false,
-      }),
-      Collaboration.configure({
-        document: ydoc,
-      }),
-      CollaborationCursor.configure({
-        provider: provider || undefined,
-      }),
+      StarterKit,
       InlineSuggestions.configure({
         onSuggestionRequest: onInlineSuggestionRequest || (() => {}),
         debounceMs: 1500,
         documentKey: `${documentId}-${versionNumber}`
       })
     ],
+    content: content,
     onUpdate: ({ editor }) => {
       handleEditorChange(editor.getHTML());
     },
-  }, [provider, ydoc]);
+  }, []);
 
   // Highlight and scroll to the issue location when panel suggestion is active
   useEffect(() => {
@@ -127,13 +142,30 @@ export default function Editor({
 
   // Load initial content only when document is empty (first user)
   useEffect(() => {
-    if (editor && provider && content) {
-      // Only set content if the Yjs document is empty
-      const yXmlFragment = ydoc.getXmlFragment('default');
-      if (yXmlFragment.length === 0) {
-        editor.commands.setContent(content);
+    if (!editor || !provider || !content || !ydoc) return;
+
+    // Wait for the provider to sync before loading content
+    const handleSync = (isSynced: boolean) => {
+      if (isSynced && ydoc) {
+        // Only set content if the Yjs document is empty (no other users have content)
+        const yXmlFragment = ydoc.getXmlFragment('default');
+        if (yXmlFragment.length === 0 && editor.isEmpty) {
+          editor.commands.setContent(content);
+        }
       }
+    };
+
+    // Check if already synced
+    if (provider.synced) {
+      handleSync(true);
+    } else {
+      // Wait for sync event
+      provider.on('sync', handleSync);
     }
+
+    return () => {
+      provider.off('sync', handleSync);
+    };
   }, [editor, provider, content, ydoc]);
 
   // Handle keyboard shortcuts for inline suggestions only
@@ -300,7 +332,7 @@ export default function Editor({
               <div className="mt-3">
                 <div className="text-xs text-gray-500 mb-1">Suggested Text:</div>
                 <div className="bg-green-50 border border-green-200 rounded p-2">
-                  <div className="font-mono text-sm text-green-900 break-words">
+                  <div className="font-mono text-sm text-green-900 wrap-break-word">
                     {activePanelSuggestion.issue.replacement.text}
                   </div>
                   <button

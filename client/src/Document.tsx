@@ -1,4 +1,4 @@
-import Editor from "./internal/Editor";
+import SimpleEditor from "./internal/SimpleEditor";
 import { InlineSuggestionResponse, PanelSuggestion } from "./types/PatentTypes";
 
 export interface DocumentProps {
@@ -34,7 +34,9 @@ export default function Document({
 
   return (
     <div className="w-full h-full overflow-y-auto">
-      <Editor
+      {/* TEMPORARY: Testing simple collaboration */}
+      <SimpleEditor documentId={documentId} versionNumber={versionNumber} />
+      {/* <Editor
         handleEditorChange={handleEditorChange}
         content={content}
         documentId={documentId}
@@ -45,7 +47,7 @@ export default function Document({
         onRejectSuggestion={onRejectSuggestion}
         activePanelSuggestion={activePanelSuggestion}
         onDismissPanelSuggestion={onDismissPanelSuggestion}
-      />
+      /> */}
     </div>
   );
 }

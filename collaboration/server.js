@@ -30,4 +30,4 @@ const server = Server.configure({
 })
 
 server.listen()
-console.log('Hocuspocus server running on port 1234')
+console.log('Hocuspocus server running on port 1234 (http://localhost:1234)')
