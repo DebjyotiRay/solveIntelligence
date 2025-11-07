@@ -89,7 +89,7 @@ export default function Editor({
         document: ydoc,
       }),
       CollaborationCursor.configure({
-        provider: provider as any,
+        provider: provider || undefined,
         user: {
           name: 'Anonymous',
           color: '#958DF1',
@@ -187,7 +187,11 @@ export default function Editor({
   }, [editor, pendingSuggestion]);
 
   // Track connected users
-  const [connectedUsers, setConnectedUsers] = useState<any[]>([]);
+  interface CollaborationUser {
+    name: string;
+    color: string;
+  }
+  const [connectedUsers, setConnectedUsers] = useState<CollaborationUser[]>([]);
   
   useEffect(() => {
     if (!provider) return;

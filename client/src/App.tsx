@@ -59,7 +59,7 @@ function App() {
   // Clear pending inline suggestions when document version changes (not on every edit!)
   useEffect(() => {
     clearPendingSuggestion();
-  }, [selectedVersionNumber, currentDocumentId]);
+  }, [selectedVersionNumber, currentDocumentId, clearPendingSuggestion]);
 
   const loadPatent = async (documentNumber: number) => {
     setIsLoading(true);
