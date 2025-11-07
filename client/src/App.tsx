@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import axios from "axios";
 import Document from "./Document";
 import LoadingOverlay from "./internal/LoadingOverlay";
@@ -23,6 +23,11 @@ interface DocumentInfo {
   title: string;
 }
 
+interface CollaborationUser {
+  name: string;
+  color: string;
+}
+
 function App() {
   // Stateless frontend state management
   const [currentDocumentContent, setCurrentDocumentContent] = useState<string>("");
@@ -35,6 +40,11 @@ function App() {
 
   // Panel suggestion state - simplified to just show location
   const [activePanelSuggestion, setActivePanelSuggestion] = useState<PanelSuggestion | null>(null);
+  
+  // Online users state
+  const [onlineUsersCount, setOnlineUsersCount] = useState<number>(0);
+  const [onlineUsers, setOnlineUsers] = useState<CollaborationUser[]>([]);
+  const [currentUser, setCurrentUser] = useState<CollaborationUser | null>(null);
 
   // WebSocket integration for AI suggestions with multi-agent streaming
   const {
@@ -59,7 +69,7 @@ function App() {
   // Clear pending inline suggestions when document version changes (not on every edit!)
   useEffect(() => {
     clearPendingSuggestion();
-  }, [selectedVersionNumber, currentDocumentId]);
+  }, [selectedVersionNumber, currentDocumentId, clearPendingSuggestion]);
 
   const loadPatent = async (documentNumber: number) => {
     setIsLoading(true);
@@ -187,6 +197,14 @@ function App() {
     setActivePanelSuggestion(null);
   };
 
+  const handleOnlineUsersChange = useCallback((count: number, users: CollaborationUser[], selfUser?: CollaborationUser) => {
+    setOnlineUsersCount(count);
+    setOnlineUsers(users);
+    if (selfUser) {
+      setCurrentUser(prevUser => prevUser || selfUser);
+    }
+  }, []);
+
   return (
     <div className="flex flex-col h-full w-full">
       {isLoading && <LoadingOverlay />}
@@ -286,6 +304,38 @@ function App() {
                   )}
                 </div>
               )}
+              
+              {/* Online Users Indicator */}
+              {(onlineUsersCount > 0 || currentUser) && (
+                <div className="flex items-center gap-2 bg-white rounded-full px-3 py-1 shadow-sm border border-gray-200">
+                  <div className="flex -space-x-2">
+                    {/* Show current user first */}
+                    {currentUser && (
+                      <div
+                        className="w-7 h-7 rounded-full border-2 border-white flex items-center justify-center text-white text-xs font-bold"
+                        style={{ backgroundColor: currentUser.color }}
+                        title={`${currentUser.name} (You)`}
+                      >
+                        {currentUser.name?.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    {/* Show other users */}
+                    {onlineUsers.map((user, index) => (
+                      <div
+                        key={index}
+                        className="w-7 h-7 rounded-full border-2 border-white flex items-center justify-center text-white text-xs font-bold"
+                        style={{ backgroundColor: user.color }}
+                        title={user.name}
+                      >
+                        {user.name?.charAt(0).toUpperCase()}
+                      </div>
+                    ))}
+                  </div>
+                  <span className="text-xs text-gray-600 font-medium">
+                    {onlineUsersCount + 1} online
+                  </span>
+                </div>
+              )}
             </div>
             
             {/* Large Prominent AI Analysis Button */}
@@ -313,6 +363,7 @@ function App() {
                 onRejectSuggestion={rejectInlineSuggestion}
                 activePanelSuggestion={activePanelSuggestion}
                 onDismissPanelSuggestion={handleDismissPanelSuggestion}
+                onOnlineUsersChange={handleOnlineUsersChange}
               />
             </div>
 

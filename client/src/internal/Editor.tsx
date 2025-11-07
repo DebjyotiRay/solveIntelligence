@@ -1,9 +1,14 @@
 import { useEffect, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import Collaboration from "@tiptap/extension-collaboration";
+import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
+import { HocuspocusProvider } from '@hocuspocus/provider';
+import * as Y from "yjs";
 import { InlineSuggestions } from "../extensions/InlineSuggestions";
-import { InlineSuggestion, PanelSuggestion } from "../types/PatentTypes";
+import { InlineSuggestionResponse, PanelSuggestion } from "../types/PatentTypes";
 import "../inline-suggestions.css";
+import "../collaboration.css";
 
 export interface EditorProps {
   handleEditorChange: (content: string) => void;
@@ -12,12 +17,19 @@ export interface EditorProps {
   versionNumber: number;
   // Inline suggestion props
   onInlineSuggestionRequest?: (content: string, pos: number, before: string, after: string, triggerType?: string) => void;
-  pendingSuggestion?: InlineSuggestion | null;
-  onAcceptSuggestion?: (suggestion: InlineSuggestion) => void;
+  pendingSuggestion?: InlineSuggestionResponse | null;
+  onAcceptSuggestion?: (suggestion: InlineSuggestionResponse) => void;
   onRejectSuggestion?: () => void;
   // Panel suggestion props - simplified to just show location
   activePanelSuggestion?: PanelSuggestion | null;
   onDismissPanelSuggestion?: () => void;
+  // Online users callback
+  onOnlineUsersChange?: (count: number, users: CollaborationUser[], selfUser?: CollaborationUser) => void;
+}
+
+interface CollaborationUser {
+  name: string;
+  color: string;
 }
 
 export default function Editor({
@@ -30,25 +42,60 @@ export default function Editor({
   onAcceptSuggestion,
   onRejectSuggestion,
   activePanelSuggestion,
-  onDismissPanelSuggestion
+  onDismissPanelSuggestion,
+  onOnlineUsersChange
 }: EditorProps) {
-  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [cursorPosition, setCursorPosition] = useState<{x: number, y: number} | null>(null);
+  const [ydoc] = useState(() => new Y.Doc());
+  const [provider] = useState(() => {
+    const roomName = `document-${documentId}-v${versionNumber}`;
+    console.log('Creating Hocuspocus provider for room:', roomName);
+    
+    // Generate random user info for this session
+    const randomColor = '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
+    const randomName = 'User ' + Math.floor(Math.random() * 1000);
+    
+    const prov = new HocuspocusProvider({
+      url: 'ws://localhost:1234',
+      name: roomName,
+      document: ydoc,
+    });
+
+    // Set user information for collaboration cursor
+    prov.on('synced', () => {
+      prov.setAwarenessField('user', {
+        name: randomName,
+        color: randomColor,
+      });
+    });
+
+    console.log('Provider created with user:', randomName);
+    
+    return prov;
+  });
 
   const editor = useEditor({
-    content: content,
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        history: false,
+      }),
+      Collaboration.configure({
+        document: ydoc,
+      }),
+      CollaborationCursor.configure({
+        provider: provider,
+      }),
       InlineSuggestions.configure({
         onSuggestionRequest: onInlineSuggestionRequest || (() => {}),
         debounceMs: 1500,
         documentKey: `${documentId}-${versionNumber}`
       })
     ],
+    content: content,
     onUpdate: ({ editor }) => {
       handleEditorChange(editor.getHTML());
     },
-  });
+  }, []);
 
   // Highlight and scroll to the issue location when panel suggestion is active
   useEffect(() => {
@@ -73,6 +120,26 @@ export default function Editor({
       }
     }
   }, [editor, activePanelSuggestion]);
+
+  // Initialize content from database when editor is empty
+  useEffect(() => {
+    if (!editor || !content) return;
+
+    // Check if editor is empty (has only one empty paragraph)
+    const isEditorEmpty = editor.isEmpty;
+    
+    if (isEditorEmpty) {
+      console.log('Initializing editor with database content');
+      editor.commands.setContent(content);
+    }
+  }, [editor, content]);
+
+  // Cleanup provider on unmount
+  useEffect(() => {
+    return () => {
+      provider?.destroy();
+    };
+  }, [provider]);
 
   // Handle keyboard shortcuts for inline suggestions only
   useEffect(() => {
@@ -103,14 +170,6 @@ export default function Editor({
   }, [editor, pendingSuggestion, onAcceptSuggestion, onRejectSuggestion, activePanelSuggestion, onDismissPanelSuggestion]);
 
   useEffect(() => {
-    if (editor && content !== editor.getHTML()) {
-      setIsLoading(true);
-      editor.commands.setContent(content);
-      setIsLoading(false);
-    }
-  }, [content, editor]);
-
-  useEffect(() => {
     if (editor && pendingSuggestion) {
       const { view } = editor;
       const coords = view.coordsAtPos(view.state.selection.from);
@@ -125,10 +184,45 @@ export default function Editor({
     }
   }, [editor, pendingSuggestion]);
 
+  // Track connected users
+  useEffect(() => {
+    if (!provider || !provider.awareness || !onOnlineUsersChange) return;
+
+    const updateUsers = () => {
+      if (!provider.awareness) return;
+      
+      const states = Array.from(provider.awareness.getStates().entries()) as [number, { user?: CollaborationUser }][];
+      
+      // Get current user
+      const currentUserState = provider.awareness.getLocalState() as { user?: CollaborationUser } | null;
+      const selfUser = currentUserState?.user;
+      
+      // Get all users including self
+      const allUsers: CollaborationUser[] = states
+        .map(([, state]) => state.user)
+        .filter((user): user is CollaborationUser => user !== undefined && user !== null);
+      
+      // Get other users (excluding self)
+      const otherUsers: CollaborationUser[] = states
+        .filter(([clientId]) => clientId !== provider.awareness!.clientID)
+        .map(([, state]) => state.user)
+        .filter((user): user is CollaborationUser => user !== undefined && user !== null);
+      
+      // Pass total count (including self) and other users list
+      onOnlineUsersChange(allUsers.length, otherUsers, selfUser);
+    };
+
+    provider.awareness.on('change', updateUsers);
+    updateUsers();
+
+    return () => {
+      provider.awareness?.off('change', updateUsers);
+    };
+  }, [provider, onOnlineUsersChange]);
+
 
   return (
     <div className="relative">
-      {isLoading && <div>Loading...</div>}
       <EditorContent editor={editor}></EditorContent>
       
       {/* Display inline suggestion at cursor position */}
@@ -198,7 +292,7 @@ export default function Editor({
               <div className="mt-3">
                 <div className="text-xs text-gray-500 mb-1">Suggested Text:</div>
                 <div className="bg-green-50 border border-green-200 rounded p-2">
-                  <div className="font-mono text-sm text-green-900 break-words">
+                  <div className="font-mono text-sm text-green-900 wrap-break-word">
                     {activePanelSuggestion.issue.replacement.text}
                   </div>
                   <button

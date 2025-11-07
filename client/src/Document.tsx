@@ -1,5 +1,10 @@
 import Editor from "./internal/Editor";
-import { InlineSuggestion, PanelSuggestion } from "./types/PatentTypes";
+import { InlineSuggestionResponse, PanelSuggestion } from "./types/PatentTypes";
+
+interface CollaborationUser {
+  name: string;
+  color: string;
+}
 
 export interface DocumentProps {
   onContentChange: (content: string) => void;
@@ -8,12 +13,14 @@ export interface DocumentProps {
   versionNumber: number;
   // Inline suggestion props
   onInlineSuggestionRequest?: (content: string, pos: number, before: string, after: string) => void;
-  pendingSuggestion?: InlineSuggestion | null;
-  onAcceptSuggestion?: (suggestion: InlineSuggestion) => void;
+  pendingSuggestion?: InlineSuggestionResponse | null;
+  onAcceptSuggestion?: (suggestion: InlineSuggestionResponse) => void;
   onRejectSuggestion?: () => void;
   // Panel suggestion props - simplified to just show location
   activePanelSuggestion?: PanelSuggestion | null;
   onDismissPanelSuggestion?: () => void;
+  // Online users callback
+  onOnlineUsersChange?: (count: number, users: CollaborationUser[], selfUser?: CollaborationUser) => void;
 }
 
 export default function Document({
@@ -26,7 +33,8 @@ export default function Document({
   onAcceptSuggestion,
   onRejectSuggestion,
   activePanelSuggestion,
-  onDismissPanelSuggestion
+  onDismissPanelSuggestion,
+  onOnlineUsersChange
 }: DocumentProps) {
   const handleEditorChange = (content: string) => {
     onContentChange(content);
@@ -34,10 +42,10 @@ export default function Document({
 
   return (
     <div className="w-full h-full overflow-y-auto">
-      <Editor
+      <Editor 
         handleEditorChange={handleEditorChange}
         content={content}
-        documentId={documentId}
+        documentId={documentId} 
         versionNumber={versionNumber}
         onInlineSuggestionRequest={onInlineSuggestionRequest}
         pendingSuggestion={pendingSuggestion}
@@ -45,6 +53,7 @@ export default function Document({
         onRejectSuggestion={onRejectSuggestion}
         activePanelSuggestion={activePanelSuggestion}
         onDismissPanelSuggestion={onDismissPanelSuggestion}
+        onOnlineUsersChange={onOnlineUsersChange}
       />
     </div>
   );
