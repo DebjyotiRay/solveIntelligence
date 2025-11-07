@@ -51,9 +51,9 @@ class DocumentStructureAgent(BasePatentAgent):
         findings = {
             "type": "structure_analysis",
             "parsed_document": parsed_document,
-            "confidence": ai_validation.get("confidence", 0.5),
-            "issues": ai_validation.get("issues", []),
-            "recommendations": ai_validation.get("recommendations", [])
+            "confidence": ai_validation.confidence,
+            "issues": ai_validation.issues,
+            "recommendations": ai_validation.suggestions
         }
         
         logger.info(f"STRUCTURE AGENT: Analysis complete - {len(findings['issues'])} issues found")
@@ -188,29 +188,30 @@ CRITICAL FOR SPELLING/GRAMMAR:
 - replacement.text MUST contain the EXACT corrected spelling (e.g., "receive")
 - Do NOT report generic "check spelling" - report "Change 'recieve' to 'receive' in paragraph 3"
 
-Respond in JSON format:
+Respond ONLY with valid JSON in this EXACT format:
 {{
-  "confidence": 0.0-1.0,
+  "confidence": 0.85,
   "issues": [
     {{
-      "type": "issue_type",
-      "severity": "high/medium/low",
-      "paragraph": 3,
-      "description": "specific issue description",
-      "suggestion": "how to fix it",
-      "target": {{
-        "text": "exact text to find and replace (if applicable)",
-        "section": "section name where this applies (e.g., Claims, Abstract, etc.)",
-        "position": "before/after/replace"
-      }},
-      "replacement": {{
-        "type": "add/replace/insert",
-        "text": "COMPLETE formatted text to add or replace with"
-      }}
+      "type": "clarity_issue",
+      "severity": "medium",
+      "description": "Vague term 'substantially' used without definition",
+      "suggestion": "Define 'substantially' or use specific measurements"
+    }},
+    {{
+      "type": "claim_issue",
+      "severity": "high",
+      "description": "Claim 1 missing proper antecedent basis for 'the device'",
+      "suggestion": "First introduce 'a device' then refer to 'the device'"
     }}
   ],
-  "recommendations": ["recommendation1", "recommendation2"]
+  "recommendations": ["Add definitions section", "Review claim dependencies"]
 }}
+
+CRITICAL: 
+- type MUST be EXACTLY one of: "missing_section", "format_error", "clarity_issue", or "claim_issue"
+- severity MUST be EXACTLY one of: "high", "medium", or "low"
+- Do NOT use any other values for these fields
 
 IMPORTANT: 
 - For missing sections, provide the complete section template in replacement.text
@@ -243,12 +244,27 @@ IMPORTANT:
             
             result = json.loads(result_text)
             
-            # Convert to typed model
+            # Convert to typed model with validation
             issues = []
+            valid_types = {'missing_section', 'format_error', 'clarity_issue', 'claim_issue'}
+            valid_severities = {'high', 'medium', 'low'}
+            
             for issue in result.get('issues', []):
+                # Validate and default type
+                issue_type = issue.get('type', 'format_error')
+                if issue_type not in valid_types:
+                    logger.warning(f"Invalid issue type '{issue_type}', defaulting to 'format_error'")
+                    issue_type = 'format_error'
+                
+                # Validate and default severity
+                severity = issue.get('severity', 'medium')
+                if severity not in valid_severities:
+                    logger.warning(f"Invalid severity '{severity}', defaulting to 'medium'")
+                    severity = 'medium'
+                
                 issues.append(StructuralIssue(
-                    type=issue.get('type', 'other'),
-                    severity=issue.get('severity', 'medium'),
+                    type=issue_type,
+                    severity=severity,
                     description=issue.get('description', ''),
                     location=issue.get('target', {}).get('section') if 'target' in issue else None,
                     suggestion=issue.get('suggestion', '')

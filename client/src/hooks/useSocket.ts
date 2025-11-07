@@ -141,7 +141,20 @@ export const useSocket = (): UseWebSocketReturn => {
         } else if (response.status === 'inline_suggestion') {
           // Handle inline suggestions
           const suggestion = response as InlineSuggestionResponse;
-          setPendingSuggestion(suggestion);
+          console.log('✨ Received inline suggestion:', {
+            suggested_text: suggestion.suggested_text,
+            suggested_text_length: suggestion.suggested_text?.length || 0,
+            confidence: suggestion.confidence,
+            reasoning: suggestion.reasoning
+          });
+          
+          // Only set suggestion if it has actual text
+          if (suggestion.suggested_text && suggestion.suggested_text.trim().length > 0) {
+            console.log('✅ Setting pending suggestion with text:', suggestion.suggested_text);
+            setPendingSuggestion(suggestion);
+          } else {
+            console.warn('⚠️ Received empty suggestion, not setting pendingSuggestion');
+          }
 
         } else if (response.status === 'error') {
           // Handle errors

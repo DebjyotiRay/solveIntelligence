@@ -69,7 +69,8 @@ function App() {
   // Clear pending inline suggestions when document version changes (not on every edit!)
   useEffect(() => {
     clearPendingSuggestion();
-  }, [selectedVersionNumber, currentDocumentId, clearPendingSuggestion]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedVersionNumber, currentDocumentId]);
 
   const loadPatent = async (documentNumber: number) => {
     setIsLoading(true);

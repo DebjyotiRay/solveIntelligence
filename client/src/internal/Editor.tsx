@@ -170,16 +170,27 @@ export default function Editor({
   }, [editor, pendingSuggestion, onAcceptSuggestion, onRejectSuggestion, activePanelSuggestion, onDismissPanelSuggestion]);
 
   useEffect(() => {
-    if (editor && pendingSuggestion) {
+    console.log('👁️ Editor: pendingSuggestion changed:', {
+      hasSuggestion: !!pendingSuggestion,
+      suggested_text: pendingSuggestion?.suggested_text,
+      hasEditor: !!editor
+    });
+    
+    if (editor && pendingSuggestion && pendingSuggestion.suggested_text) {
       const { view } = editor;
       const coords = view.coordsAtPos(view.state.selection.from);
       const editorRect = view.dom.getBoundingClientRect();
       
-      setCursorPosition({
+      const newCursorPosition = {
         x: coords.left - editorRect.left,
-        y: coords.top - editorRect.top - 2
-      });
+        y: coords.top - editorRect.top
+      };
+      
+      console.log('📍 Editor: Setting cursor position:', newCursorPosition);
+      console.log('📍 Editor: Suggested text:', pendingSuggestion.suggested_text);
+      setCursorPosition(newCursorPosition);
     } else {
+      console.log('📍 Editor: Clearing cursor position');
       setCursorPosition(null);
     }
   }, [editor, pendingSuggestion]);
@@ -225,23 +236,38 @@ export default function Editor({
     <div className="relative">
       <EditorContent editor={editor}></EditorContent>
       
-      {/* Display inline suggestion at cursor position */}
-      {pendingSuggestion && cursorPosition && !activePanelSuggestion && (
+      {/* Display inline suggestion at cursor position - clean gray italics */}
+      {pendingSuggestion && pendingSuggestion.suggested_text && cursorPosition && !activePanelSuggestion && (
         <div
-          className="absolute pointer-events-none z-10"
+          className="absolute z-50 pointer-events-none"
           style={{
-            left: cursorPosition.x,
-            top: cursorPosition.y,
-            color: '#888',
+            left: `${cursorPosition.x}px`,
+            top: `${cursorPosition.y}px`,
+            color: '#9ca3af',
             fontStyle: 'italic',
             opacity: 0.6,
             fontSize: 'inherit',
             fontFamily: 'inherit',
-            whiteSpace: 'nowrap'
+            whiteSpace: 'pre-wrap',
+            maxWidth: '500px',
+            lineHeight: 'inherit'
           }}
           title="Tab to accept, Esc to reject"
         >
           {pendingSuggestion.suggested_text}
+        </div>
+      )}
+
+      {/* Minimal inline suggestion hint */}
+      {pendingSuggestion && pendingSuggestion.suggested_text && !activePanelSuggestion && (
+        <div
+          className="fixed bottom-4 right-4 z-50 bg-gray-900 bg-opacity-75 rounded px-3 py-1.5 shadow-lg flex items-center gap-2 text-xs text-white"
+        >
+          <kbd className="px-1.5 py-0.5 bg-gray-700 rounded font-mono text-[10px]">Tab</kbd>
+          <span className="text-gray-300">accept</span>
+          <span className="text-gray-600">|</span>
+          <kbd className="px-1.5 py-0.5 bg-gray-700 rounded font-mono text-[10px]">Esc</kbd>
+          <span className="text-gray-300">dismiss</span>
         </div>
       )}
 
