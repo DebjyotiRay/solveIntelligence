@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { WebsocketProvider } from "y-websocket";
+import Collaboration from "@tiptap/extension-collaboration";
+import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
+import { HocuspocusProvider } from '@hocuspocus/provider';
 import * as Y from "yjs";
 import { InlineSuggestions } from "../extensions/InlineSuggestions";
 import { InlineSuggestionResponse, PanelSuggestion } from "../types/PatentTypes";
 import "../inline-suggestions.css";
+import "../collaboration.css";
 
 export interface EditorProps {
   handleEditorChange: (content: string) => void;
@@ -43,75 +46,45 @@ export default function Editor({
   onOnlineUsersChange
 }: EditorProps) {
   const [cursorPosition, setCursorPosition] = useState<{x: number, y: number} | null>(null);
-  const [provider, setProvider] = useState<WebsocketProvider | null>(null);
-  const [ydoc, setYdoc] = useState<Y.Doc | null>(null);
-
-  // Initialize collaboration provider
-  useEffect(() => {
-    console.log('=== Collaboration Setup Effect ===');
-    console.log('documentId:', documentId, 'type:', typeof documentId);
-    console.log('versionNumber:', versionNumber, 'type:', typeof versionNumber);
-    
-    // DISABLE COLLABORATION FOR NOW TO TEST
-    console.log('COLLABORATION DISABLED FOR DEBUGGING');
-    return;
-
-    // Don't connect if we don't have valid document info
-    if (!documentId || !versionNumber) {
-      console.log('Skipping collaboration setup - missing documentId or versionNumber', { documentId, versionNumber });
-      return;
-    }
-
-    // Generate a random color for this user
-    const getRandomColor = () => {
-      const colors = ['#958DF1', '#F98181', '#FBBC88', '#FAF594', '#70CFF8', '#94FADB', '#B9F18D'];
-      return colors[Math.floor(Math.random() * colors.length)];
-    };
-
-    // Generate a random name for this user
-    const getRandomName = () => {
-      const names = ['Alice', 'Bob', 'Charlie', 'Diana', 'Eve', 'Frank', 'Grace', 'Henry'];
-      return names[Math.floor(Math.random() * names.length)];
-    };
-
-    // Create new Yjs document for this room
-    const doc = new Y.Doc();
-    setYdoc(doc);
-
+  const [ydoc] = useState(() => new Y.Doc());
+  const [provider] = useState(() => {
     const roomName = `document-${documentId}-v${versionNumber}`;
-    console.log('!!! CREATING PROVIDER WITH ROOM NAME:', roomName);
-    console.log('Room name length:', roomName.length);
-    console.log('Room name charCodes:', Array.from(roomName).map(c => c.charCodeAt(0)));
+    console.log('Creating Hocuspocus provider for room:', roomName);
     
-    // Connect to Hocuspocus server
-    const websocketProvider = new WebsocketProvider(
-      'ws://localhost:1234',
-      roomName,
-      doc,
-      {
-        connect: true,
-      }
-    );
-
-    console.log('Provider created, room:', websocketProvider.roomname);
-
-    websocketProvider.awareness.setLocalStateField('user', {
-      name: getRandomName(),
-      color: getRandomColor(),
+    // Generate random user info for this session
+    const randomColor = '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
+    const randomName = 'User ' + Math.floor(Math.random() * 1000);
+    
+    const prov = new HocuspocusProvider({
+      url: 'ws://localhost:1234',
+      name: roomName,
+      document: ydoc,
     });
 
-    setProvider(hocuspocusProvider);
+    // Set user information for collaboration cursor
+    prov.on('synced', () => {
+      prov.setAwarenessField('user', {
+        name: randomName,
+        color: randomColor,
+      });
+    });
 
-    return () => {
-      console.log('Destroying provider for room:', roomName);
-      websocketProvider.destroy();
-      doc.destroy();
-    };
-  }, [documentId, versionNumber]);
+    console.log('Provider created with user:', randomName);
+    
+    return prov;
+  });
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        history: false,
+      }),
+      Collaboration.configure({
+        document: ydoc,
+      }),
+      CollaborationCursor.configure({
+        provider: provider,
+      }),
       InlineSuggestions.configure({
         onSuggestionRequest: onInlineSuggestionRequest || (() => {}),
         debounceMs: 1500,
@@ -148,33 +121,25 @@ export default function Editor({
     }
   }, [editor, activePanelSuggestion]);
 
-  // Load initial content only when document is empty (first user)
+  // Initialize content from database when editor is empty
   useEffect(() => {
-    if (!editor || !provider || !content || !ydoc) return;
+    if (!editor || !content) return;
 
-    // Wait for the provider to sync before loading content
-    const handleSync = (isSynced: boolean) => {
-      if (isSynced && ydoc) {
-        // Only set content if the Yjs document is empty (no other users have content)
-        const yXmlFragment = ydoc.getXmlFragment('default');
-        if (yXmlFragment.length === 0 && editor.isEmpty) {
-          editor.commands.setContent(content);
-        }
-      }
-    };
-
-    // Check if already synced
-    if (provider.synced) {
-      handleSync(true);
-    } else {
-      // Wait for sync event
-      provider.on('sync', handleSync);
+    // Check if editor is empty (has only one empty paragraph)
+    const isEditorEmpty = editor.isEmpty;
+    
+    if (isEditorEmpty) {
+      console.log('Initializing editor with database content');
+      editor.commands.setContent(content);
     }
+  }, [editor, content]);
 
+  // Cleanup provider on unmount
+  useEffect(() => {
     return () => {
-      provider.off('sync', handleSync);
+      provider?.destroy();
     };
-  }, [editor, provider, content, ydoc]);
+  }, [provider]);
 
   // Handle keyboard shortcuts for inline suggestions only
   useEffect(() => {
@@ -221,29 +186,37 @@ export default function Editor({
 
   // Track connected users
   useEffect(() => {
-    if (!provider) return;
+    if (!provider || !provider.awareness || !onOnlineUsersChange) return;
 
     const updateUsers = () => {
+      if (!provider.awareness) return;
+      
       const states = Array.from(provider.awareness.getStates().entries()) as [number, { user?: CollaborationUser }][];
       
       // Get current user
       const currentUserState = provider.awareness.getLocalState() as { user?: CollaborationUser } | null;
       const selfUser = currentUserState?.user;
       
-      // Get other users (excluding self)
-      const users: CollaborationUser[] = states
-        .filter(([clientId]) => clientId !== provider.awareness.clientID)
+      // Get all users including self
+      const allUsers: CollaborationUser[] = states
         .map(([, state]) => state.user)
         .filter((user): user is CollaborationUser => user !== undefined && user !== null);
       
-      onOnlineUsersChange?.(users.length, users, selfUser);
+      // Get other users (excluding self)
+      const otherUsers: CollaborationUser[] = states
+        .filter(([clientId]) => clientId !== provider.awareness!.clientID)
+        .map(([, state]) => state.user)
+        .filter((user): user is CollaborationUser => user !== undefined && user !== null);
+      
+      // Pass total count (including self) and other users list
+      onOnlineUsersChange(allUsers.length, otherUsers, selfUser);
     };
 
     provider.awareness.on('change', updateUsers);
     updateUsers();
 
     return () => {
-      provider.awareness.off('change', updateUsers);
+      provider.awareness?.off('change', updateUsers);
     };
   }, [provider, onOnlineUsersChange]);
 

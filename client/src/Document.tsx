@@ -1,4 +1,4 @@
-import SimpleEditor from "./internal/SimpleEditor";
+import Editor from "./internal/Editor";
 import { InlineSuggestionResponse, PanelSuggestion } from "./types/PatentTypes";
 
 interface CollaborationUser {
@@ -42,12 +42,10 @@ export default function Document({
 
   return (
     <div className="w-full h-full overflow-y-auto">
-      {/* TEMPORARY: Testing simple collaboration */}
-      <SimpleEditor documentId={documentId} versionNumber={versionNumber} />
-      {/* <Editor
+      <Editor 
         handleEditorChange={handleEditorChange}
         content={content}
-        documentId={documentId}
+        documentId={documentId} 
         versionNumber={versionNumber}
         onInlineSuggestionRequest={onInlineSuggestionRequest}
         pendingSuggestion={pendingSuggestion}
@@ -55,7 +53,8 @@ export default function Document({
         onRejectSuggestion={onRejectSuggestion}
         activePanelSuggestion={activePanelSuggestion}
         onDismissPanelSuggestion={onDismissPanelSuggestion}
-      /> */}
+        onOnlineUsersChange={onOnlineUsersChange}
+      />
     </div>
   );
 }
