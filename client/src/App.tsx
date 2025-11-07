@@ -40,6 +40,9 @@ function App() {
 
   // Panel suggestion state - simplified to just show location
   const [activePanelSuggestion, setActivePanelSuggestion] = useState<PanelSuggestion | null>(null);
+
+  // Fix application state - when set, Editor will apply this fix
+  const [issueToApply, setIssueToApply] = useState<PatentIssue | null>(null);
   
   // Online users state
   const [onlineUsersCount, setOnlineUsersCount] = useState<number>(0);
@@ -190,8 +193,19 @@ function App() {
     const panelSuggestion: PanelSuggestion = {
       issue
     };
-    
+
     setActivePanelSuggestion(panelSuggestion);
+  };
+
+  const handleApplyFix = (issue: PatentIssue) => {
+    // Set the issue to apply, which will trigger the Editor to apply the fix
+    setIssueToApply(issue);
+  };
+
+  const handleFixApplied = () => {
+    // Called by Editor after fix is successfully applied
+    setIssueToApply(null);
+    setActivePanelSuggestion(null); // Also dismiss the panel suggestion
   };
 
   const handleDismissPanelSuggestion = () => {
@@ -364,6 +378,8 @@ function App() {
                 onRejectSuggestion={rejectInlineSuggestion}
                 activePanelSuggestion={activePanelSuggestion}
                 onDismissPanelSuggestion={handleDismissPanelSuggestion}
+                issueToApply={issueToApply}
+                onFixApplied={handleFixApplied}
                 onOnlineUsersChange={handleOnlineUsersChange}
               />
             </div>
@@ -379,6 +395,7 @@ function App() {
                 currentPhase={currentPhase}
                 streamUpdates={streamUpdates}
                 onShowSuggestionLocation={handleShowSuggestionLocation}
+                onApplyFix={handleApplyFix}
                 activeSuggestion={activePanelSuggestion?.issue || null}
               />
             </div>

@@ -6,7 +6,7 @@ import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import * as Y from "yjs";
 import { InlineSuggestions } from "../extensions/InlineSuggestions";
-import { InlineSuggestionResponse, PanelSuggestion } from "../types/PatentTypes";
+import { InlineSuggestionResponse, PanelSuggestion, PatentIssue } from "../types/PatentTypes";
 import "../inline-suggestions.css";
 import "../collaboration.css";
 
@@ -23,6 +23,9 @@ export interface EditorProps {
   // Panel suggestion props - simplified to just show location
   activePanelSuggestion?: PanelSuggestion | null;
   onDismissPanelSuggestion?: () => void;
+  // Fix application props
+  issueToApply?: PatentIssue | null;
+  onFixApplied?: () => void;
   // Online users callback
   onOnlineUsersChange?: (count: number, users: CollaborationUser[], selfUser?: CollaborationUser) => void;
 }
@@ -43,6 +46,8 @@ export default function Editor({
   onRejectSuggestion,
   activePanelSuggestion,
   onDismissPanelSuggestion,
+  issueToApply,
+  onFixApplied,
   onOnlineUsersChange
 }: EditorProps) {
   const [cursorPosition, setCursorPosition] = useState<{x: number, y: number} | null>(null);
@@ -102,24 +107,98 @@ export default function Editor({
     if (editor && activePanelSuggestion) {
       const editorTextContent = editor.state.doc.textContent;
       const targetText = activePanelSuggestion.issue.target?.text;
-      
+
       if (targetText) {
         // Simple text search
         const pos = editorTextContent.indexOf(targetText);
-        
+
         if (pos !== -1) {
           // Select/highlight the text
           editor.chain()
             .focus()
-            .setTextSelection({ 
-              from: pos, 
-              to: pos + targetText.length 
+            .setTextSelection({
+              from: pos,
+              to: pos + targetText.length
             })
             .run();
         }
       }
     }
   }, [editor, activePanelSuggestion]);
+
+  // Apply fix when issueToApply changes
+  useEffect(() => {
+    if (!editor || !issueToApply || !issueToApply.replacement?.text) return;
+
+    const targetText = issueToApply.target?.text;
+    const replacementText = issueToApply.replacement.text;
+    const replacementType = issueToApply.replacement.type;
+    const editorTextContent = editor.state.doc.textContent;
+
+    try {
+      if (replacementType === 'replace' && targetText) {
+        // Find and replace the target text
+        const pos = editorTextContent.indexOf(targetText);
+
+        if (pos !== -1) {
+          // Replace the text
+          editor.chain()
+            .focus()
+            .setTextSelection({
+              from: pos,
+              to: pos + targetText.length
+            })
+            .insertContent(replacementText)
+            .run();
+
+          console.log('✅ Applied fix: replaced text at position', pos);
+          onFixApplied?.();
+        } else {
+          console.error('❌ Could not find target text to replace:', targetText);
+          alert('Could not find the text to replace. It may have been modified.');
+          onFixApplied?.(); // Clear the state even on error
+        }
+      } else if (replacementType === 'insert' && targetText) {
+        // Insert replacement text after the target text
+        const pos = editorTextContent.indexOf(targetText);
+
+        if (pos !== -1) {
+          // Insert after the target text
+          const insertPos = pos + targetText.length;
+          editor.chain()
+            .focus()
+            .setTextSelection({ from: insertPos, to: insertPos })
+            .insertContent(' ' + replacementText)
+            .run();
+
+          console.log('✅ Applied fix: inserted text at position', insertPos);
+          onFixApplied?.();
+        } else {
+          console.error('❌ Could not find target text for insertion:', targetText);
+          alert('Could not find the location to insert text. It may have been modified.');
+          onFixApplied?.();
+        }
+      } else if (replacementType === 'add') {
+        // Add text at the end of the document or at cursor
+        const currentPos = editor.state.selection.from;
+        editor.chain()
+          .focus()
+          .setTextSelection({ from: currentPos, to: currentPos })
+          .insertContent('\n' + replacementText)
+          .run();
+
+        console.log('✅ Applied fix: added text at current position');
+        onFixApplied?.();
+      } else {
+        console.error('❌ Unknown replacement type or missing target text:', replacementType);
+        onFixApplied?.();
+      }
+    } catch (error) {
+      console.error('❌ Error applying fix:', error);
+      alert('An error occurred while applying the fix.');
+      onFixApplied?.();
+    }
+  }, [editor, issueToApply, onFixApplied]);
 
   // Initialize content from database when editor is empty
   useEffect(() => {

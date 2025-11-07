@@ -1,5 +1,5 @@
 import Editor from "./internal/Editor";
-import { InlineSuggestionResponse, PanelSuggestion } from "./types/PatentTypes";
+import { InlineSuggestionResponse, PanelSuggestion, PatentIssue } from "./types/PatentTypes";
 
 interface CollaborationUser {
   name: string;
@@ -19,6 +19,9 @@ export interface DocumentProps {
   // Panel suggestion props - simplified to just show location
   activePanelSuggestion?: PanelSuggestion | null;
   onDismissPanelSuggestion?: () => void;
+  // Fix application props
+  issueToApply?: PatentIssue | null;
+  onFixApplied?: () => void;
   // Online users callback
   onOnlineUsersChange?: (count: number, users: CollaborationUser[], selfUser?: CollaborationUser) => void;
 }
@@ -34,6 +37,8 @@ export default function Document({
   onRejectSuggestion,
   activePanelSuggestion,
   onDismissPanelSuggestion,
+  issueToApply,
+  onFixApplied,
   onOnlineUsersChange
 }: DocumentProps) {
   const handleEditorChange = (content: string) => {
@@ -42,10 +47,10 @@ export default function Document({
 
   return (
     <div className="w-full h-full overflow-y-auto">
-      <Editor 
+      <Editor
         handleEditorChange={handleEditorChange}
         content={content}
-        documentId={documentId} 
+        documentId={documentId}
         versionNumber={versionNumber}
         onInlineSuggestionRequest={onInlineSuggestionRequest}
         pendingSuggestion={pendingSuggestion}
@@ -53,6 +58,8 @@ export default function Document({
         onRejectSuggestion={onRejectSuggestion}
         activePanelSuggestion={activePanelSuggestion}
         onDismissPanelSuggestion={onDismissPanelSuggestion}
+        issueToApply={issueToApply}
+        onFixApplied={onFixApplied}
         onOnlineUsersChange={onOnlineUsersChange}
       />
     </div>

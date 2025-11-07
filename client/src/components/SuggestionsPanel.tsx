@@ -28,6 +28,7 @@ interface SuggestionsPanelProps {
   currentPhase?: string;
   streamUpdates: StreamUpdate[];
   onShowSuggestionLocation?: (issue: PatentIssue) => void;
+  onApplyFix?: (issue: PatentIssue) => void;
   activeSuggestion?: PatentIssue | null;
 }
 
@@ -40,6 +41,7 @@ const SuggestionsPanel: React.FC<SuggestionsPanelProps> = ({
   currentPhase,
   streamUpdates,
   onShowSuggestionLocation,
+  onApplyFix,
   activeSuggestion
 }) => {
   const [error, setError] = useState<string | null>(null);
@@ -277,20 +279,32 @@ const SuggestionsPanel: React.FC<SuggestionsPanelProps> = ({
                     <div className="bg-blue-50 border border-blue-100 rounded p-3">
                       <div className="flex items-start justify-between mb-2">
                         <h5 className="text-sm font-medium text-blue-900">Suggestion:</h5>
-                        
-                        {onShowSuggestionLocation && (
-                          <button
-                            onClick={() => onShowSuggestionLocation(issue)}
-                            className={`px-3 py-1 text-xs rounded transition-all font-medium ${
-                              isActive 
-                                ? 'bg-orange-100 text-orange-800 border border-orange-200' 
-                                : 'bg-blue-600 text-white hover:bg-blue-700 border border-blue-600 hover:border-blue-700'
-                            }`}
-                            title="Highlight this issue in the document"
-                          >
-                            {isActive ? '📍 Showing' : '📍 Show Me'}
-                          </button>
-                        )}
+
+                        <div className="flex gap-2">
+                          {onShowSuggestionLocation && (
+                            <button
+                              onClick={() => onShowSuggestionLocation(issue)}
+                              className={`px-3 py-1 text-xs rounded transition-all font-medium ${
+                                isActive
+                                  ? 'bg-orange-100 text-orange-800 border border-orange-200'
+                                  : 'bg-blue-600 text-white hover:bg-blue-700 border border-blue-600 hover:border-blue-700'
+                              }`}
+                              title="Highlight this issue in the document"
+                            >
+                              {isActive ? '📍 Showing' : '📍 Show Me'}
+                            </button>
+                          )}
+
+                          {onApplyFix && issue.replacement?.text && (
+                            <button
+                              onClick={() => onApplyFix(issue)}
+                              className="px-3 py-1 text-xs rounded transition-all font-medium bg-green-600 text-white hover:bg-green-700 border border-green-600 hover:border-green-700"
+                              title="Automatically apply this fix to the document"
+                            >
+                              ✨ Insert Fix
+                            </button>
+                          )}
+                        </div>
                       </div>
                       <p className="text-sm text-blue-800 leading-relaxed">{issue.suggestion}</p>
                       
