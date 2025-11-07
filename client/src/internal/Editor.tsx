@@ -20,6 +20,13 @@ export interface EditorProps {
   // Panel suggestion props - simplified to just show location
   activePanelSuggestion?: PanelSuggestion | null;
   onDismissPanelSuggestion?: () => void;
+  // Online users callback
+  onOnlineUsersChange?: (count: number, users: CollaborationUser[], selfUser?: CollaborationUser) => void;
+}
+
+interface CollaborationUser {
+  name: string;
+  color: string;
 }
 
 export default function Editor({
@@ -32,7 +39,8 @@ export default function Editor({
   onAcceptSuggestion,
   onRejectSuggestion,
   activePanelSuggestion,
-  onDismissPanelSuggestion
+  onDismissPanelSuggestion,
+  onOnlineUsersChange
 }: EditorProps) {
   const [cursorPosition, setCursorPosition] = useState<{x: number, y: number} | null>(null);
   const [provider, setProvider] = useState<WebsocketProvider | null>(null);
@@ -92,7 +100,7 @@ export default function Editor({
       color: getRandomColor(),
     });
 
-    setProvider(websocketProvider);
+    setProvider(hocuspocusProvider);
 
     return () => {
       console.log('Destroying provider for room:', roomName);
@@ -212,22 +220,23 @@ export default function Editor({
   }, [editor, pendingSuggestion]);
 
   // Track connected users
-  interface CollaborationUser {
-    name: string;
-    color: string;
-  }
-  const [connectedUsers, setConnectedUsers] = useState<CollaborationUser[]>([]);
-  
   useEffect(() => {
     if (!provider) return;
 
     const updateUsers = () => {
-      const states = Array.from(provider.awareness.getStates().entries());
-      const users = states
+      const states = Array.from(provider.awareness.getStates().entries()) as [number, { user?: CollaborationUser }][];
+      
+      // Get current user
+      const currentUserState = provider.awareness.getLocalState() as { user?: CollaborationUser } | null;
+      const selfUser = currentUserState?.user;
+      
+      // Get other users (excluding self)
+      const users: CollaborationUser[] = states
         .filter(([clientId]) => clientId !== provider.awareness.clientID)
         .map(([, state]) => state.user)
-        .filter(user => user);
-      setConnectedUsers(users);
+        .filter((user): user is CollaborationUser => user !== undefined && user !== null);
+      
+      onOnlineUsersChange?.(users.length, users, selfUser);
     };
 
     provider.awareness.on('change', updateUsers);
@@ -236,33 +245,11 @@ export default function Editor({
     return () => {
       provider.awareness.off('change', updateUsers);
     };
-  }, [provider]);
+  }, [provider, onOnlineUsersChange]);
 
 
   return (
     <div className="relative">
-      
-      {/* Connected Users Indicator */}
-      {connectedUsers.length > 0 && (
-        <div className="absolute top-2 right-2 z-50 flex items-center gap-2 bg-white rounded-full px-3 py-1 shadow-md border border-gray-200">
-          <div className="flex -space-x-2">
-            {connectedUsers.map((user, index) => (
-              <div
-                key={index}
-                className="w-8 h-8 rounded-full border-2 border-white flex items-center justify-center text-white text-xs font-bold"
-                style={{ backgroundColor: user.color }}
-                title={user.name}
-              >
-                {user.name?.charAt(0).toUpperCase()}
-              </div>
-            ))}
-          </div>
-          <span className="text-xs text-gray-600 font-medium">
-            {connectedUsers.length} online
-          </span>
-        </div>
-      )}
-      
       <EditorContent editor={editor}></EditorContent>
       
       {/* Display inline suggestion at cursor position */}

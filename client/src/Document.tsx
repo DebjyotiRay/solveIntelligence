@@ -1,6 +1,11 @@
 import SimpleEditor from "./internal/SimpleEditor";
 import { InlineSuggestionResponse, PanelSuggestion } from "./types/PatentTypes";
 
+interface CollaborationUser {
+  name: string;
+  color: string;
+}
+
 export interface DocumentProps {
   onContentChange: (content: string) => void;
   content: string;
@@ -14,6 +19,8 @@ export interface DocumentProps {
   // Panel suggestion props - simplified to just show location
   activePanelSuggestion?: PanelSuggestion | null;
   onDismissPanelSuggestion?: () => void;
+  // Online users callback
+  onOnlineUsersChange?: (count: number, users: CollaborationUser[], selfUser?: CollaborationUser) => void;
 }
 
 export default function Document({
@@ -26,7 +33,8 @@ export default function Document({
   onAcceptSuggestion,
   onRejectSuggestion,
   activePanelSuggestion,
-  onDismissPanelSuggestion
+  onDismissPanelSuggestion,
+  onOnlineUsersChange
 }: DocumentProps) {
   const handleEditorChange = (content: string) => {
     onContentChange(content);
