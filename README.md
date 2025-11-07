@@ -63,3 +63,25 @@ Enjoy!
 **Task 2 - Real-Time AI Suggestions:** Completed the WebSocket endpoint with robust HTML-to-plaintext conversion (using BeautifulSoup), multi-stage JSON error handling with fallback parsing, and streaming progress updates for better UX. The system handles the "poor API" requirements by stripping HTML before sending to the AI library and gracefully recovering from malformed JSON responses.
 
 **Task 3 - AI Innovation:** Built a multi-agent patent analysis system with memory-enhanced agents that learn from historical analyses. The system features: (1) **Multi-Agent Orchestration** with structure and legal compliance agents running in parallel, (2) **Persistent Memory** using Mem0 for cross-session learning and pattern recognition, (3) **GitHub Copilot-style Inline Suggestions** for real-time writing assistance with context-aware completions. The system is opt-in via feature flag (`USE_MULTI_AGENT_SYSTEM`), preserving backward compatibility with the original AI implementation.
+
+---
+
+## Collaboration & Awareness Features
+
+**Real-Time Collaborative Editing:** Implemented TipTap collaboration using a self-hosted Hocuspocus WebSocket server. Multiple users can now edit the same document simultaneously with real-time synchronization powered by Yjs CRDT (Conflict-free Replicated Data Types).
+
+**Key Features:**
+- **Multi-user Editing:** Changes sync instantly between all connected users
+- **Cursor Awareness:** See where other users are typing with colored cursor indicators showing their name
+- **Online Presence:** Visual indicator showing how many users are currently editing
+- **Document Isolation:** Each document version has its own collaborative room for independent editing
+- **Self-Hosted Backend:** Uses Hocuspocus server (port 1234) instead of TipTap Cloud for full control
+
+**Architecture:**
+- **Client:** TipTap extensions (`@tiptap/extension-collaboration`, `@tiptap/extension-collaboration-cursor`) with Yjs and y-websocket
+- **Collaboration Server:** Standalone Hocuspocus WebSocket server in `/collaboration` directory
+- **Docker Integration:** Collaboration service runs alongside existing FastAPI server and Vite frontend
+
+**Testing Collaboration:**
+Open the application in multiple browser tabs or windows, navigate to the same document/version, and start typing to see real-time synchronization in action!
+

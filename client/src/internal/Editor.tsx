@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import Collaboration from "@tiptap/extension-collaboration";
+import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
+import { WebsocketProvider } from "y-websocket";
+import * as Y from "yjs";
 import { InlineSuggestions } from "../extensions/InlineSuggestions";
-import { InlineSuggestion, PanelSuggestion } from "../types/PatentTypes";
+import { InlineSuggestionResponse, PanelSuggestion } from "../types/PatentTypes";
 import "../inline-suggestions.css";
 
 export interface EditorProps {
@@ -12,8 +16,8 @@ export interface EditorProps {
   versionNumber: number;
   // Inline suggestion props
   onInlineSuggestionRequest?: (content: string, pos: number, before: string, after: string, triggerType?: string) => void;
-  pendingSuggestion?: InlineSuggestion | null;
-  onAcceptSuggestion?: (suggestion: InlineSuggestion) => void;
+  pendingSuggestion?: InlineSuggestionResponse | null;
+  onAcceptSuggestion?: (suggestion: InlineSuggestionResponse) => void;
   onRejectSuggestion?: () => void;
   // Panel suggestion props - simplified to just show location
   activePanelSuggestion?: PanelSuggestion | null;
@@ -34,11 +38,63 @@ export default function Editor({
 }: EditorProps) {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [cursorPosition, setCursorPosition] = useState<{x: number, y: number} | null>(null);
+  const [provider, setProvider] = useState<WebsocketProvider | null>(null);
+  const [ydoc] = useState(() => new Y.Doc());
+
+  // Initialize collaboration provider
+  useEffect(() => {
+    // Generate a random color for this user
+    const getRandomColor = () => {
+      const colors = ['#958DF1', '#F98181', '#FBBC88', '#FAF594', '#70CFF8', '#94FADB', '#B9F18D'];
+      return colors[Math.floor(Math.random() * colors.length)];
+    };
+
+    // Generate a random name for this user
+    const getRandomName = () => {
+      const names = ['Alice', 'Bob', 'Charlie', 'Diana', 'Eve', 'Frank', 'Grace', 'Henry'];
+      return names[Math.floor(Math.random() * names.length)];
+    };
+
+    const roomName = `document-${documentId}-v${versionNumber}`;
+    
+    // Connect to Hocuspocus server
+    const websocketProvider = new WebsocketProvider(
+      'ws://localhost:1234',
+      roomName,
+      ydoc,
+      {
+        connect: true,
+      }
+    );
+
+    websocketProvider.awareness.setLocalStateField('user', {
+      name: getRandomName(),
+      color: getRandomColor(),
+    });
+
+    setProvider(websocketProvider);
+
+    return () => {
+      websocketProvider.destroy();
+    };
+  }, [documentId, versionNumber, ydoc]);
 
   const editor = useEditor({
-    content: content,
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        // Disable history extension as Collaboration handles it
+        history: false,
+      }),
+      Collaboration.configure({
+        document: ydoc,
+      }),
+      CollaborationCursor.configure({
+        provider: provider as any,
+        user: {
+          name: 'Anonymous',
+          color: '#958DF1',
+        },
+      }),
       InlineSuggestions.configure({
         onSuggestionRequest: onInlineSuggestionRequest || (() => {}),
         debounceMs: 1500,
@@ -48,7 +104,7 @@ export default function Editor({
     onUpdate: ({ editor }) => {
       handleEditorChange(editor.getHTML());
     },
-  });
+  }, [provider, ydoc]);
 
   // Highlight and scroll to the issue location when panel suggestion is active
   useEffect(() => {
@@ -73,6 +129,19 @@ export default function Editor({
       }
     }
   }, [editor, activePanelSuggestion]);
+
+  // Load initial content only when document is empty (first user)
+  useEffect(() => {
+    if (editor && provider && content && !isLoading) {
+      // Only set content if the Yjs document is empty
+      const yXmlFragment = ydoc.getXmlFragment('default');
+      if (yXmlFragment.length === 0) {
+        setIsLoading(true);
+        editor.commands.setContent(content);
+        setIsLoading(false);
+      }
+    }
+  }, [editor, provider, content, ydoc, isLoading]);
 
   // Handle keyboard shortcuts for inline suggestions only
   useEffect(() => {
@@ -103,14 +172,6 @@ export default function Editor({
   }, [editor, pendingSuggestion, onAcceptSuggestion, onRejectSuggestion, activePanelSuggestion, onDismissPanelSuggestion]);
 
   useEffect(() => {
-    if (editor && content !== editor.getHTML()) {
-      setIsLoading(true);
-      editor.commands.setContent(content);
-      setIsLoading(false);
-    }
-  }, [content, editor]);
-
-  useEffect(() => {
     if (editor && pendingSuggestion) {
       const { view } = editor;
       const coords = view.coordsAtPos(view.state.selection.from);
@@ -125,10 +186,55 @@ export default function Editor({
     }
   }, [editor, pendingSuggestion]);
 
+  // Track connected users
+  const [connectedUsers, setConnectedUsers] = useState<any[]>([]);
+  
+  useEffect(() => {
+    if (!provider) return;
+
+    const updateUsers = () => {
+      const states = Array.from(provider.awareness.getStates().entries());
+      const users = states
+        .filter(([clientId]) => clientId !== provider.awareness.clientID)
+        .map(([, state]) => state.user)
+        .filter(user => user);
+      setConnectedUsers(users);
+    };
+
+    provider.awareness.on('change', updateUsers);
+    updateUsers();
+
+    return () => {
+      provider.awareness.off('change', updateUsers);
+    };
+  }, [provider]);
+
 
   return (
     <div className="relative">
       {isLoading && <div>Loading...</div>}
+      
+      {/* Connected Users Indicator */}
+      {connectedUsers.length > 0 && (
+        <div className="absolute top-2 right-2 z-50 flex items-center gap-2 bg-white rounded-full px-3 py-1 shadow-md border border-gray-200">
+          <div className="flex -space-x-2">
+            {connectedUsers.map((user, index) => (
+              <div
+                key={index}
+                className="w-8 h-8 rounded-full border-2 border-white flex items-center justify-center text-white text-xs font-bold"
+                style={{ backgroundColor: user.color }}
+                title={user.name}
+              >
+                {user.name?.charAt(0).toUpperCase()}
+              </div>
+            ))}
+          </div>
+          <span className="text-xs text-gray-600 font-medium">
+            {connectedUsers.length} online
+          </span>
+        </div>
+      )}
+      
       <EditorContent editor={editor}></EditorContent>
       
       {/* Display inline suggestion at cursor position */}

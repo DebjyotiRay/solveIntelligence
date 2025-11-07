@@ -1,5 +1,5 @@
 import Editor from "./internal/Editor";
-import { InlineSuggestion, PanelSuggestion } from "./types/PatentTypes";
+import { InlineSuggestionResponse, PanelSuggestion } from "./types/PatentTypes";
 
 export interface DocumentProps {
   onContentChange: (content: string) => void;
@@ -8,8 +8,8 @@ export interface DocumentProps {
   versionNumber: number;
   // Inline suggestion props
   onInlineSuggestionRequest?: (content: string, pos: number, before: string, after: string) => void;
-  pendingSuggestion?: InlineSuggestion | null;
-  onAcceptSuggestion?: (suggestion: InlineSuggestion) => void;
+  pendingSuggestion?: InlineSuggestionResponse | null;
+  onAcceptSuggestion?: (suggestion: InlineSuggestionResponse) => void;
   onRejectSuggestion?: () => void;
   // Panel suggestion props - simplified to just show location
   activePanelSuggestion?: PanelSuggestion | null;
