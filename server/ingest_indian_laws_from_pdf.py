@@ -1,19 +1,23 @@
 """
-Indian Law PDF Ingestion Script - LOCAL EMBEDDINGS
+3-Tier Knowledge Ingestion Script - LOCAL EMBEDDINGS
 
-Extracts text from official Indian law PDFs and creates embeddings using LOCAL models.
-Processes:
-- Indian Patent Act, 1970
-- Indian Penal Code (IPC), 1860
-- Indian Evidence Act, 1872
-- Constitution of India
+Level 1: Legal Knowledge (Global)
+- data/indian_laws/ → ChromaDB "indian_legal_knowledge_local"
+- Indian Patent Act, IPC, Constitution, etc.
+
+Level 2: Firm Knowledge (Firm-wide)
+- data/firm_knowledge/ → ChromaDB "firm_knowledge_local"
+- Firm's successful patents, templates, style guides
+
+Level 3: Case Knowledge (Project-specific)
+- Uploaded via API → Mem0 "episodic_client_memory"
+- Invention disclosures, prior art, specs
 
 Uses:
 - sentence-transformers for FREE local embeddings
 - ChromaDB for vector storage
 - PyMuPDF for PDF extraction
 
-NO OpenAI API calls = $0 cost!
 """
 
 import os
@@ -24,6 +28,8 @@ from pathlib import Path
 from typing import List, Dict, Any
 import logging
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import partial
 
 # PDF processing
 import fitz  # PyMuPDF
@@ -42,25 +48,18 @@ class IndianLawPDFProcessor:
 
     def __init__(
         self,
-        pdf_dir: str = "data/indian_laws",
-        db_path: str = "db",
-        model_name: str = "BAAI/bge-large-en-v1.5"
+        legal_pdf_dir: str = "data/indian_laws",
+        firm_pdf_dir: str = "data/firm_knowledge",
+        db_path: str = "db"
     ):
-        self.pdf_dir = Path(pdf_dir)
+        self.legal_pdf_dir = Path(legal_pdf_dir)
+        self.firm_pdf_dir = Path(firm_pdf_dir)
         self.db_path = db_path
 
-        # Load local embedding model (FREE!)
-        logger.info(f"Loading embedding model: {model_name}")
-        logger.info("(First run downloads ~1.3GB, then cached locally)")
-
-        try:
-            self.embedding_model = SentenceTransformer(model_name)
-            embedding_dim = self.embedding_model.get_sentence_embedding_dimension()
-            logger.info(f"✓ Model loaded (dimensions: {embedding_dim})")
-        except Exception as e:
-            logger.warning(f"Failed to load {model_name}, using fallback: {e}")
-            self.embedding_model = SentenceTransformer("all-mpnet-base-v2")
-            logger.info("✓ Fallback model loaded (dimensions: 768)")
+        # Load local embedding model (all-mpnet-base-v2)
+        logger.info("Loading all-mpnet-base-v2 (768 dimensions, optimized for semantic similarity)")
+        self.embedding_model = SentenceTransformer("all-mpnet-base-v2")
+        logger.info("✓ Embedding model loaded")
 
         # Initialize ChromaDB
         self.chroma_client = chromadb.PersistentClient(
@@ -68,12 +67,19 @@ class IndianLawPDFProcessor:
             settings=Settings(anonymized_telemetry=False)
         )
 
-        # Create/get collection
-        self.collection = self.chroma_client.get_or_create_collection(
+        # Create/get Level 1 collection (Legal Knowledge)
+        self.legal_collection = self.chroma_client.get_or_create_collection(
             name="indian_legal_knowledge_local",
-            metadata={"description": "Indian law with local embeddings"}
+            metadata={"description": "Indian law with local embeddings", "level": "1_legal"}
         )
-        logger.info("✓ ChromaDB collection ready")
+        logger.info("✓ Legal knowledge collection ready")
+
+        # Create/get Level 2 collection (Firm Knowledge)
+        self.firm_collection = self.chroma_client.get_or_create_collection(
+            name="firm_knowledge_local",
+            metadata={"description": "Firm knowledge with local embeddings", "level": "2_firm"}
+        )
+        logger.info("✓ Firm knowledge collection ready")
 
     def extract_text_from_pdf(self, pdf_path: Path) -> str:
         """Extract all text from a PDF file"""
@@ -262,10 +268,167 @@ class IndianLawPDFProcessor:
 
         return chunks
 
-    async def process_and_ingest(self):
-        """Main processing pipeline"""
+    def chunk_firm_document(self, text: str, filename: str, firm_id: str = "default_firm") -> List[Dict[str, Any]]:
+        """
+        Chunk firm documents (patents, templates) into manageable pieces.
+
+        Uses simple paragraph-based chunking since firm docs don't have
+        structured sections like legal statutes.
+        """
+        chunks = []
+
+        # Split by double newlines (paragraphs)
+        paragraphs = re.split(r'\n\s*\n', text)
+
+        current_chunk = ""
+        chunk_num = 0
+
+        for para in paragraphs:
+            para = para.strip()
+            if not para or len(para) < 50:
+                continue
+
+            # If adding this para would exceed chunk size, save current chunk
+            if len(current_chunk) + len(para) > 2000 and current_chunk:
+                chunk_num += 1
+                chunks.append({
+                    "section": f"chunk_{chunk_num}",
+                    "title": f"{filename} - Part {chunk_num}",
+                    "content": current_chunk,
+                    "source": filename,
+                    "document_type": "firm_document",
+                    "firm_id": firm_id,
+                    "category": "firm_knowledge"
+                })
+                current_chunk = para
+            else:
+                current_chunk += "\n\n" + para if current_chunk else para
+
+        # Add final chunk
+        if current_chunk:
+            chunk_num += 1
+            chunks.append({
+                "section": f"chunk_{chunk_num}",
+                "title": f"{filename} - Part {chunk_num}",
+                "content": current_chunk,
+                "source": filename,
+                "document_type": "firm_document",
+                "firm_id": firm_id,
+                "category": "firm_knowledge"
+            })
+
+        return chunks
+
+    async def process_and_ingest_firm_knowledge(self):
+        """Ingest firm knowledge from data/firm_knowledge/ directory"""
         print("\n" + "="*80)
-        print("INDIAN LAW PDF PROCESSING AND INGESTION")
+        print("FIRM KNOWLEDGE INGESTION (Level 2)")
+        print("="*80)
+
+        if not self.firm_pdf_dir.exists():
+            print(f"⚠️  Directory {self.firm_pdf_dir} not found. Creating it...")
+            self.firm_pdf_dir.mkdir(parents=True, exist_ok=True)
+            print(f"📁 Created {self.firm_pdf_dir}")
+            print("   Place firm PDFs (successful patents, templates) here and run again.")
+            return {"status": "directory_created", "files_processed": 0}
+
+        # Get all PDFs in firm_knowledge directory
+        pdf_files = list(self.firm_pdf_dir.glob("*.pdf"))
+
+        if not pdf_files:
+            print(f"ℹ️  No PDF files found in {self.firm_pdf_dir}")
+            print("   This is optional - firm knowledge can be empty.")
+            return {"status": "empty", "files_processed": 0}
+
+        print(f"Found {len(pdf_files)} firm documents to process")
+
+        total_ingested = 0
+        total_failed = 0
+
+        for pdf_path in pdf_files:
+            print(f"\n{'='*80}")
+            print(f"Processing: {pdf_path.name}")
+            print(f"{'='*80}")
+
+            # Extract text
+            print("📄 Extracting text...")
+            text = self.extract_text_from_pdf(pdf_path)
+            print(f"✓ Extracted {len(text)} characters")
+
+            if len(text) < 100:
+                print(f"⚠️  Insufficient content, skipping")
+                total_failed += 1
+                continue
+
+            # Chunk the document
+            print("✂️  Chunking document...")
+            chunks = self.chunk_firm_document(text, pdf_path.name)
+            print(f"✓ Created {len(chunks)} chunks")
+
+            # Ingest to firm_knowledge_local collection
+            print("💾 Ingesting to firm knowledge collection...")
+            ingested = 0
+
+            try:
+                # Prepare batch
+                ids = []
+                texts = []
+                metadatas = []
+
+                for chunk in chunks:
+                    full_text = f"{chunk['title']}\n\n{chunk['content']}"
+                    doc_id = f"firm_{uuid.uuid4().hex[:12]}"
+                    metadata = {k: v for k, v in chunk.items() if k != "content"}
+
+                    ids.append(doc_id)
+                    texts.append(full_text)
+                    metadatas.append(metadata)
+
+                # Generate embeddings in batch
+                embeddings = self.embedding_model.encode(
+                    texts,
+                    convert_to_tensor=False,
+                    show_progress_bar=False,
+                    batch_size=32
+                )
+                embeddings = [emb.tolist() for emb in embeddings]
+
+                # Insert into firm collection
+                self.firm_collection.add(
+                    ids=ids,
+                    embeddings=embeddings,
+                    documents=texts,
+                    metadatas=metadatas
+                )
+
+                ingested = len(chunks)
+                total_ingested += ingested
+                print(f"✅ {pdf_path.name}: {ingested} chunks ingested")
+
+            except Exception as e:
+                print(f"❌ Failed to ingest {pdf_path.name}: {e}")
+                total_failed += 1
+
+        print(f"\n{'='*80}")
+        print("FIRM KNOWLEDGE INGESTION SUMMARY")
+        print(f"{'='*80}")
+        print(f"Total chunks ingested: {total_ingested}")
+        print(f"Failed files: {total_failed}")
+        print(f"💰 Total cost: $0.00 (local embeddings)")
+
+        return {
+            "status": "complete",
+            "files_processed": len(pdf_files) - total_failed,
+            "total_chunks": total_ingested
+        }
+
+    async def process_and_ingest(self):
+        """Main processing pipeline - Ingests both legal and firm knowledge"""
+        print("\n" + "="*80)
+        print("3-TIER KNOWLEDGE INGESTION PIPELINE")
+        print("="*80)
+        print("Level 1: Legal Knowledge (data/indian_laws/)")
+        print("Level 2: Firm Knowledge (data/firm_knowledge/)")
         print("="*80)
 
         stats = {
@@ -273,6 +436,11 @@ class IndianLawPDFProcessor:
             "total_ingested": 0,
             "total_failed": 0
         }
+
+        # ========== LEVEL 1: LEGAL KNOWLEDGE ==========
+        print("\n" + "="*80)
+        print("LEVEL 1: LEGAL KNOWLEDGE INGESTION")
+        print("="*80)
 
         # Process each PDF
         pdf_configs = [
@@ -299,7 +467,7 @@ class IndianLawPDFProcessor:
         ]
 
         for config in pdf_configs:
-            pdf_path = self.pdf_dir / config["filename"]
+            pdf_path = self.legal_pdf_dir / config["filename"]
 
             print(f"\n{'='*80}")
             print(f"Processing: {config['name']}")
@@ -322,13 +490,15 @@ class IndianLawPDFProcessor:
 
             stats["total_processed"] += len(chunks)
 
-            # Ingest with LOCAL embeddings (batch processing for speed)
-            print("💾 Ingesting with local embeddings (FREE!)...")
+            # Ingest with LOCAL embeddings (PARALLEL processing for speed on MPS!)
+            print("💾 Ingesting with parallel local embeddings (FREE!)...")
             ingested = 0
             failed = 0
 
             # Process in batches for efficiency
-            batch_size = 50
+            batch_size = 100  # Increased batch size for parallel processing
+            num_workers = 4    # Parallel workers for MPS
+            
             for i in range(0, len(chunks), batch_size):
                 batch = chunks[i:i + batch_size]
 
@@ -336,34 +506,36 @@ class IndianLawPDFProcessor:
                     # Prepare batch data
                     ids = []
                     texts = []
-                    embeddings = []
                     metadatas = []
 
+                    # Prepare full texts
                     for chunk in batch:
-                        # Create full text
                         section = chunk.get("section", "")
                         title = chunk.get("title", "")
                         content = chunk.get("content", "")
                         full_text = f"Section {section}: {title}\n\n{content}"
-
-                        # Generate embedding locally (FREE!)
-                        embedding = self.embedding_model.encode(
-                            full_text,
-                            convert_to_tensor=False,
-                            show_progress_bar=False
-                        ).tolist()
-
-                        # Prepare data
+                        
                         doc_id = f"legal_{uuid.uuid4().hex[:12]}"
                         metadata = {k: v for k, v in chunk.items() if k != "content"}
 
                         ids.append(doc_id)
                         texts.append(full_text)
-                        embeddings.append(embedding)
                         metadatas.append(metadata)
 
-                    # Batch insert into ChromaDB
-                    self.collection.add(
+                    # PARALLEL EMBEDDING GENERATION for MPS acceleration
+                    # Encode all texts in batch (much faster than one-by-one)
+                    embeddings = self.embedding_model.encode(
+                        texts,
+                        convert_to_tensor=False,
+                        show_progress_bar=False,
+                        batch_size=32  # Sub-batch size for model
+                    )
+                    
+                    # Convert to list format
+                    embeddings = [emb.tolist() for emb in embeddings]
+
+                    # Batch insert into ChromaDB legal collection
+                    self.legal_collection.add(
                         ids=ids,
                         embeddings=embeddings,
                         documents=texts,
@@ -371,7 +543,7 @@ class IndianLawPDFProcessor:
                     )
 
                     ingested += len(batch)
-                    print(f"  ✓ Batch {i//batch_size + 1}: {len(batch)} sections ingested")
+                    print(f"  ✓ Batch {i//batch_size + 1}: {len(batch)} sections ingested (parallel)")
 
                 except Exception as e:
                     print(f"  ✗ Failed batch {i//batch_size + 1}: {e}")
@@ -381,14 +553,25 @@ class IndianLawPDFProcessor:
             stats["total_ingested"] += ingested
             stats["total_failed"] += failed
 
-        # Final summary
+        # Legal knowledge summary
         print(f"\n{'='*80}")
-        print("INGESTION SUMMARY")
+        print("LEVEL 1 INGESTION SUMMARY (Legal Knowledge)")
         print(f"{'='*80}")
         print(f"Total chunks processed: {stats['total_processed']}")
         print(f"✓ Successfully ingested: {stats['total_ingested']}")
         print(f"✗ Failed: {stats['total_failed']}")
         print(f"💰 Total cost: $0.00 (local embeddings!)")
+
+        # ========== LEVEL 2: FIRM KNOWLEDGE ==========
+        firm_result = await self.process_and_ingest_firm_knowledge()
+
+        # Combined summary
+        print(f"\n{'='*80}")
+        print("COMPLETE INGESTION SUMMARY")
+        print(f"{'='*80}")
+        print(f"Level 1 (Legal): {stats['total_ingested']} chunks")
+        print(f"Level 2 (Firm): {firm_result.get('total_chunks', 0)} chunks")
+        print(f"💰 Total cost: $0.00 (100% local embeddings!)")
 
         # Verify with test queries
         print(f"\n{'='*80}")
@@ -412,8 +595,8 @@ class IndianLawPDFProcessor:
                 show_progress_bar=False
             ).tolist()
 
-            # Search ChromaDB
-            results = self.collection.query(
+            # Search ChromaDB legal collection
+            results = self.legal_collection.query(
                 query_embeddings=[query_embedding],
                 n_results=2
             )
@@ -429,21 +612,29 @@ class IndianLawPDFProcessor:
                 print("   No results found")
 
         print(f"\n{'='*80}")
-        print("✅ INGESTION COMPLETE!")
+        print("✅ 3-TIER INGESTION COMPLETE!")
         print(f"{'='*80}")
-        print(f"\n🎉 Successfully ingested {stats['total_ingested']} legal document sections!")
+        print(f"\n🎉 Successfully ingested knowledge into 3-tier hierarchy!")
         print(f"💾 Stored in: {self.db_path}/chroma.sqlite3")
         print(f"💰 Total cost: $0.00 (100% local)")
         print(f"⚡ Model: {self.embedding_model}")
-        print("\nYour unified legal memory now contains:")
-        print("  • Indian Patent Act sections")
-        print("  • Indian Penal Code sections")
-        print("  • Indian Evidence Act sections")
-        print("  • Constitution of India articles")
-        print("\nReady for:")
-        print("  ✓ AI agent legal analysis")
+        print("\n📚 3-TIER KNOWLEDGE HIERARCHY:")
+        print("  Level 1 (Legal - Global):")
+        print("    • Indian Patent Act sections")
+        print("    • Indian Penal Code sections")
+        print("    • Indian Evidence Act sections")
+        print("    • Constitution of India articles")
+        print(f"    → {stats['total_ingested']} chunks in 'indian_legal_knowledge_local'")
+        print("\n  Level 2 (Firm - Firm-wide):")
+        print(f"    • Firm's successful patents & templates")
+        print(f"    → {firm_result.get('total_chunks', 0)} chunks in 'firm_knowledge_local'")
+        print("\n  Level 3 (Case - Project-specific):")
+        print("    • Case documents uploaded via API")
+        print("    → Stored in 'episodic_client_memory' (Mem0)")
+        print("\n✅ Ready for:")
+        print("  ✓ AI agent legal analysis with firm context")
         print("  ✓ Real-time inline suggestions")
-        print("  ✓ Semantic search across Indian law")
+        print("  ✓ Semantic search across all knowledge levels")
 
 
 async def main():
@@ -452,16 +643,16 @@ async def main():
     print("\n" + "="*80)
     print("INDIAN LAW INGESTION - LOCAL EMBEDDINGS")
     print("="*80)
-    print("Using: sentence-transformers + ChromaDB")
-    print("Model: BAAI/bge-large-en-v1.5 (best for legal documents)")
-    print("Cost: $0.00 (no API calls)")
+    print("Using: all-mpnet-base-v2 (sentence-transformers) + ChromaDB")
+    print("Model: Optimized for semantic similarity (768 dimensions)")
+    print("Cost: $0.00 (100% local, no API calls)")
     print("="*80)
 
     # Initialize processor
     processor = IndianLawPDFProcessor(
-        pdf_dir="data/indian_laws",
-        db_path="db",
-        model_name="BAAI/bge-large-en-v1.5"
+        legal_pdf_dir="data/indian_laws",
+        firm_pdf_dir="data/firm_knowledge",
+        db_path="db"
     )
 
     # Run ingestion

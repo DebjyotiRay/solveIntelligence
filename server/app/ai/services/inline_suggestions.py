@@ -63,25 +63,34 @@ class InlineSuggestionsService:
             words_before = context_before.split()[-20:]
             simple_context = " ".join(words_before)
 
-            # 🚀 ENHANCEMENT: Check if user is writing about legal concepts
-            legal_context = ""
+            # 🚀 ENHANCEMENT: Query 3-tier memory hierarchy
+            context_parts = []
             last_50_chars = context_before[-50:].lower()
 
-            # Detect legal references
+            # Detect legal/patent references
             if any(term in last_50_chars for term in ['section', 'act', 'patent', 'claim', 'algorithm', 'software']):
                 try:
-                    # Query legal memory for context
+                    # Level 1: Legal knowledge
                     legal_refs = self.memory.query_legal_knowledge(
-                        query=context_before[-100:],  # Last 100 chars for context
-                        limit=2
+                        query=context_before[-100:],
+                        limit=1
                     )
-
                     if legal_refs:
-                        # Add legal knowledge to prompt
-                        legal_context = f"\n\nRELEVANT LEGAL CONTEXT:\n{legal_refs[0].get('memory', '')[:200]}"
-                        print(f"💡 Found legal context: {legal_refs[0].get('metadata', {}).get('section', 'N/A')}")
+                        context_parts.append(f"LEGAL: {legal_refs[0].get('memory', '')[:150]}")
+
+                    # Level 2: Firm knowledge (always query for writing style)
+                    firm_refs = self.memory.query_firm_knowledge(
+                        query=context_before[-100:],
+                        limit=1
+                    )
+                    if firm_refs:
+                        context_parts.append(f"FIRM STYLE: {firm_refs[0].get('memory', '')[:150]}")
+                        print(f"💼 Using firm knowledge: {firm_refs[0].get('metadata', {}).get('title', 'N/A')}")
+
                 except Exception as e:
-                    print(f"⚠️ Could not query legal memory: {e}")
+                    print(f"⚠️ Could not query memory: {e}")
+
+            legal_context = "\n\n" + "\n".join(context_parts) if context_parts else ""
 
             # Enhanced prompt with legal grounding
             system_prompt = f"You are an expert patent writing assistant with knowledge of Indian Patent Law. Complete the text naturally (5-10 words) following patent drafting conventions.{legal_context}"
@@ -123,15 +132,30 @@ class InlineSuggestionsService:
 
             print(f"✅ Generated suggestion: '{suggested_text}' ({len(suggested_text.split())} words)")
 
-            # Higher confidence if legal grounding was used
-            confidence = 0.85 if legal_context else 0.75
+            # Higher confidence if grounded in knowledge
+            has_legal = "LEGAL:" in legal_context
+            has_firm = "FIRM STYLE:" in legal_context
+
+            if has_legal and has_firm:
+                confidence = 0.90  # Both legal + firm = highest confidence
+                grounding = " + Legal + Firm Knowledge"
+            elif has_legal:
+                confidence = 0.85  # Just legal
+                grounding = " + Legal Knowledge"
+            elif has_firm:
+                confidence = 0.80  # Just firm
+                grounding = " + Firm Knowledge"
+            else:
+                confidence = 0.75  # No grounding
+                grounding = ""
 
             return {
                 "suggested_text": suggested_text,
-                "reasoning": f"AI completion using {self.model}" + (" + Legal Memory" if legal_context else ""),
+                "reasoning": f"AI completion using {self.model}{grounding}",
                 "confidence": confidence,
                 "model_used": self.model,
-                "legal_grounded": bool(legal_context)
+                "legal_grounded": has_legal,
+                "firm_grounded": has_firm
             }
 
         except Exception as e:

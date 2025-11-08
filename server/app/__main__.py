@@ -12,6 +12,7 @@ import app.models as models
 import app.schemas as schemas
 from app.services.database_service import DatabaseService
 from app.services.websocket_service import WebSocketService
+from app.api_onboarding import router as onboarding_router
 
 USE_MULTI_AGENT_SYSTEM = os.getenv("USE_MULTI_AGENT_SYSTEM", "false").lower() == "true"
 
@@ -39,6 +40,9 @@ fastapi_app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include onboarding routes
+fastapi_app.include_router(onboarding_router)
 
 
 @fastapi_app.get("/document/{document_id}", response_model=schemas.DocumentRead)

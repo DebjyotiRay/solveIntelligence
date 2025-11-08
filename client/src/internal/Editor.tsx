@@ -195,6 +195,43 @@ export default function Editor({
     }
   }, [editor, pendingSuggestion]);
 
+  // Auto-fix handler
+  const handleAutoFix = () => {
+    if (!editor || !activePanelSuggestion) return;
+
+    const targetText = activePanelSuggestion.issue.target?.text;
+    const replacementText = activePanelSuggestion.issue.replacement?.text;
+
+    if (!targetText || !replacementText) {
+      console.warn('Cannot auto-fix: missing target or replacement text');
+      return;
+    }
+
+    try {
+      const docText = editor.state.doc.textContent;
+      const targetPos = docText.indexOf(targetText);
+
+      if (targetPos === -1) {
+        alert('Could not find the text to replace. It may have been edited.');
+        return;
+      }
+
+      // Apply fix - Yjs will sync to all collaborators!
+      const from = targetPos + 1;
+      const to = from + targetText.length;
+
+      editor.chain().focus().setTextSelection({ from, to }).insertContent(replacementText).run();
+
+      console.log(`✅ Auto-fix applied: "${targetText}" → "${replacementText}"`);
+
+      // Dismiss the panel
+      onDismissPanelSuggestion?.();
+    } catch (error) {
+      console.error('Error applying auto-fix:', error);
+      alert('Failed to apply fix. Please try manually.');
+    }
+  };
+
   // Track connected users
   useEffect(() => {
     if (!provider || !provider.awareness || !onOnlineUsersChange) return;
@@ -321,14 +358,22 @@ export default function Editor({
                   <div className="font-mono text-sm text-green-900 wrap-break-word">
                     {activePanelSuggestion.issue.replacement.text}
                   </div>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(activePanelSuggestion.issue.replacement!.text);
-                    }}
-                    className="mt-2 text-xs text-green-700 hover:text-green-900 underline"
-                  >
-                    📋 Copy to Clipboard
-                  </button>
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      onClick={handleAutoFix}
+                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium py-1.5 px-3 rounded transition-colors"
+                    >
+                      ✨ Insert Fix
+                    </button>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(activePanelSuggestion.issue.replacement!.text);
+                      }}
+                      className="text-xs text-green-700 hover:text-green-900 underline"
+                    >
+                      📋 Copy
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

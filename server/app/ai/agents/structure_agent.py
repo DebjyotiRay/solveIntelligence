@@ -4,11 +4,13 @@ import os
 import json
 import logging
 from typing import Dict, Any, List
+from datetime import datetime
 
 from .base_agent import BasePatentAgent
 from ..workflow.patent_state import PatentAnalysisState
 from ..utils import strip_html
 from ..types import StructureAnalysisResult, StructuralIssue
+from app.services.memory_service import get_memory_service
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +19,7 @@ class DocumentStructureAgent(BasePatentAgent):
     
     def __init__(self):
         super().__init__("structure")
+        self.memory = get_memory_service()  # 🚀 MEMORY INTEGRATION
 
     async def analyze(self, state: PatentAnalysisState, stream_callback=None) -> Dict[str, Any]:
         logger.info("STRUCTURE AGENT: Starting AI-powered analysis")
@@ -45,8 +48,8 @@ class DocumentStructureAgent(BasePatentAgent):
                 "agent": "structure",
                 "message": "🤖 Sending to AI for validation..."
             })
-        
-        ai_validation = await self._ai_validate_document(parsed_document, stream_callback)
+
+        ai_validation = await self._ai_validate_document(parsed_document, stream_callback, state)
         
         findings = {
             "type": "structure_analysis",
@@ -136,7 +139,24 @@ class DocumentStructureAgent(BasePatentAgent):
         figure_refs = re.findall(r'(?:FIG\.?\s*\d+|Figure\s*\d+)', content, re.IGNORECASE)
         return list(set(figure_refs))
 
-    async def _ai_validate_document(self, parsed_doc: Dict[str, Any], stream_callback=None) -> StructureAnalysisResult:
+    def _get_shared_context_prompt(self, state: PatentAnalysisState) -> str:
+        """Get shared context for this agent from state."""
+        shared_context = state.get("shared_context")
+        if not shared_context:
+            return ""
+
+        try:
+            # Get context formatted for structure agent
+            context_str = shared_context.get_formatted_context_for_llm(
+                agent_name="structure",
+                max_chars=1000
+            )
+            return f"\n\n{context_str}" if context_str else ""
+        except Exception as e:
+            logger.warning(f"Could not get shared context: {e}")
+            return ""
+
+    async def _ai_validate_document(self, parsed_doc: Dict[str, Any], stream_callback=None, state: PatentAnalysisState = None) -> StructureAnalysisResult:
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             logger.warning("No OpenAI API key - skipping AI validation")
@@ -163,6 +183,9 @@ Claims ({len(parsed_doc.get('claims', []))} total):
 
 Full text preview: {parsed_doc.get('full_text', '')[:1000]}
 """
+
+            # Get shared context (firm preferences, legal refs)
+            context_addition = self._get_shared_context_prompt(state) if state else ""
 
             prompt = f"""Analyze this patent document for issues:
 
@@ -213,12 +236,13 @@ CRITICAL:
 - severity MUST be EXACTLY one of: "high", "medium", or "low"
 - Do NOT use any other values for these fields
 
-IMPORTANT: 
+IMPORTANT:
 - For missing sections, provide the complete section template in replacement.text
 - For punctuation fixes, provide the exact punctuation mark in replacement.text
 - For antecedent basis, provide the corrected phrase in replacement.text
 - Always include target.text when replacing existing content
-- Use target.section to specify where in the document structure this applies"""
+- Use target.section to specify where in the document structure this applies
+{context_addition}"""
 
             if stream_callback:
                 await stream_callback({

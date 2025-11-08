@@ -58,12 +58,36 @@ class MemoryService:
             path="db",
             settings=Settings(anonymized_telemetry=False)
         )
-        self.legal_collection_db = self.chroma_client.get_collection("indian_legal_knowledge_local")
-        self.embedding_model = SentenceTransformer(self.embedding_model_name)
-        logger.info(f"✓ Legal Knowledge ChromaDB collection loaded: {self.legal_collection_db.count()} documents")
+        
+        # Level 1: Legal Knowledge (Global)
+        self.legal_collection_db = self.chroma_client.get_or_create_collection(
+            name="indian_legal_knowledge_local",
+            metadata={"description": "Indian legal knowledge base", "level": "1_legal"}
+        )
 
-        # Note: We don't use Mem0 for legal knowledge since it was ingested directly into ChromaDB
-        # This avoids the overhead of Mem0's LLM processing for static legal documents
+        # Level 2: Firm Knowledge (Firm-wide)
+        self.firm_collection_db = self.chroma_client.get_or_create_collection(
+            name="firm_knowledge_local",
+            metadata={"description": "Firm knowledge base", "level": "2_firm"}
+        )
+
+        self.embedding_model = SentenceTransformer(self.embedding_model_name)
+
+        legal_count = self.legal_collection_db.count()
+        firm_count = self.firm_collection_db.count()
+
+        if legal_count > 0:
+            logger.info(f"✓ Level 1 (Legal) collection loaded: {legal_count} documents")
+        else:
+            logger.warning("⚠ Legal collection empty - run ingest_indian_laws_from_pdf.py")
+
+        if firm_count > 0:
+            logger.info(f"✓ Level 2 (Firm) collection loaded: {firm_count} documents")
+        else:
+            logger.info("ℹ️ Firm collection empty - add PDFs to data/firm_knowledge/ and run ingestion")
+
+        # Note: We don't use Mem0 for Level 1 & 2 (legal + firm knowledge)
+        # This avoids the overhead of Mem0's LLM processing for static documents
         self.unified_legal_memory = None  # Not used
 
         # Initialize Stage 2: Episodic Client Memory with Mem0 (needs LLM processing)
@@ -196,7 +220,58 @@ class MemoryService:
         except Exception as e:
             logger.error(f"Legal knowledge search failed: {e}")
             return []
-    
+
+    def query_firm_knowledge(
+        self,
+        query: str,
+        limit: int = 5,
+        firm_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Search firm knowledge base using direct ChromaDB query.
+
+        Args:
+            query: Search query (e.g., "successful software patent claims")
+            limit: Max results to return
+            firm_id: Optional filter by firm_id (if you have multiple firms)
+
+        Returns:
+            List of relevant firm references with metadata
+        """
+        try:
+            # Generate query embedding
+            query_embedding = self.embedding_model.encode(query, convert_to_tensor=False).tolist()
+
+            # Build filters if firm_id specified
+            where_filter = None
+            if firm_id:
+                where_filter = {'firm_id': {'$eq': firm_id}}
+
+            # Query ChromaDB directly
+            results = self.firm_collection_db.query(
+                query_embeddings=[query_embedding],
+                n_results=limit,
+                where=where_filter,
+                include=['documents', 'metadatas', 'distances']
+            )
+
+            # Format results to match Mem0-style output for consistency
+            formatted_results = []
+            if results['ids'] and len(results['ids'][0]) > 0:
+                for i in range(len(results['ids'][0])):
+                    formatted_results.append({
+                        'id': results['ids'][0][i],
+                        'memory': results['documents'][0][i],  # Full document text
+                        'metadata': results['metadatas'][0][i],
+                        'score': 1 - results['distances'][0][i] if results['distances'] else None  # Convert distance to similarity
+                    })
+
+            logger.debug(f"Firm knowledge search '{query}': {len(formatted_results)} results")
+            return formatted_results
+        except Exception as e:
+            logger.error(f"Firm knowledge search failed: {e}")
+            return []
+
     def get_all_legal_memories(self) -> List[Dict[str, Any]]:
         """Get all legal memories (for debugging/export)"""
         try:

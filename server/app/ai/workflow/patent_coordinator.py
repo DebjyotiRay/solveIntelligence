@@ -6,9 +6,11 @@ from datetime import datetime
 from ..agents.structure_agent import DocumentStructureAgent
 from ..agents.legal_agent import LegalComplianceAgent
 from .patent_state import (
-    PatentAnalysisState, create_initial_state, 
+    PatentAnalysisState, create_initial_state,
     PhaseStatus, AgentStatus, update_phase
 )
+from app.services.memory_service import get_memory_service
+from app.services.shared_memory_context import create_shared_context
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +25,7 @@ class PatentAnalysisCoordinator:
         # Initialize agents
         self.structure_agent = DocumentStructureAgent()
         self.legal_agent = LegalComplianceAgent()
+        self.memory = get_memory_service()  # 🚀 MEMORY INTEGRATION
         
         logger.info("PatentAnalysisCoordinator initialized")
 
@@ -60,16 +63,36 @@ class PatentAnalysisCoordinator:
             }
 
     async def _execute_workflow(
-        self, 
+        self,
         state: PatentAnalysisState,
         stream_callback: Optional[callable] = None
     ) -> PatentAnalysisState:
         """Execute 3-phase workflow: Structure → Parallel → Synthesis."""
-        
+
         try:
+            # 🚀 MEMORY: Store document in episodic memory before analysis
+            await self._store_document_in_memory(state)
+
+            # 🚀 NEW: Create SHARED memory context for all agents
+            document = state.get("document", {})
+            client_id = state.get("client_id", state.get("document_id", "unknown"))
+
+            shared_context = create_shared_context(
+                client_id=client_id,
+                document_content=document.get("content", ""),
+                task_type="analysis"
+            )
+
+            # Add to state so agents can access it
+            state["shared_context"] = shared_context
+
             state = await self._phase1_structure_analysis(state, stream_callback)
             state = await self._phase2_parallel_analysis(state, stream_callback)
             state = await self._phase4_synthesis(state, stream_callback)
+
+            # 🚀 PERSIST: Save what agents learned
+            shared_context.persist_learnings()
+
             return state
             
         except Exception as e:
@@ -91,6 +114,34 @@ class PatentAnalysisCoordinator:
             
             return error_state
 
+    async def _store_document_in_memory(self, state: PatentAnalysisState) -> None:
+        """Store the document in client episodic memory before analysis."""
+        try:
+            document = state.get("document", {})
+            document_id = state.get("document_id", "unknown")
+            client_id = state.get("client_id", document_id)
+            
+            # Get document content
+            content = document.get("content", "")
+            title = document.get("title", "Untitled Patent")
+            
+            # Store in episodic memory
+            self.memory.store_client_document(
+                client_id=client_id,
+                document_content=content[:5000],  # Store first 5000 chars
+                metadata={
+                    'document_id': document_id,
+                    'document_type': 'patent',
+                    'title': title,
+                    'timestamp': datetime.now().isoformat(),
+                    'analysis_started': True
+                }
+            )
+            logger.info(f"✓ Stored document {document_id} in episodic memory for client {client_id}")
+        except Exception as e:
+            logger.warning(f"Failed to store document in memory: {e}")
+            # Don't fail the workflow if memory storage fails
+    
     async def _phase1_structure_analysis(
         self, 
         state: PatentAnalysisState,
