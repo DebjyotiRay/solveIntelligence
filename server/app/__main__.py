@@ -51,23 +51,43 @@ async def lifespan(_: FastAPI):
             db.refresh(master)
 
             # Create a default project for document 1
-            project = models.Project(
-                name="Default Project",
+            project1 = models.Project(
+                name="Wireless Optogenetic Device Patent",
                 owner_id=master.id,
                 document_id=1,
             )
-            db.add(project)
+            db.add(project1)
             db.commit()
-            db.refresh(project)
+            db.refresh(project1)
 
-            # Owner membership
-            owner_member = models.ProjectMember(
-                project_id=project.id,
+            # Owner membership for project 1
+            owner_member1 = models.ProjectMember(
+                project_id=project1.id,
                 user_id=master.id,
                 role="owner",
                 status="approved",
             )
-            db.add(owner_member)
+            db.add(owner_member1)
+            db.commit()
+
+            # Create a default project for document 2
+            project2 = models.Project(
+                name="Microfluidic Device Patent",
+                owner_id=master.id,
+                document_id=2,
+            )
+            db.add(project2)
+            db.commit()
+            db.refresh(project2)
+
+            # Owner membership for project 2
+            owner_member2 = models.ProjectMember(
+                project_id=project2.id,
+                user_id=master.id,
+                role="owner",
+                status="approved",
+            )
+            db.add(owner_member2)
             db.commit()
 
     yield
