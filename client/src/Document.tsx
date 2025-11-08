@@ -40,14 +40,28 @@ export default function Document({
     onContentChange(content);
   };
 
+  // Wrap inline suggestion request to include documentId
+  const handleInlineSuggestionRequest = (
+    content: string,
+    pos: number,
+    before: string,
+    after: string,
+    triggerType?: string
+  ) => {
+    if (onInlineSuggestionRequest) {
+      // Pass documentId as the last parameter (will update useSocket to accept it)
+      (onInlineSuggestionRequest as any)(content, pos, before, after, triggerType, documentId);
+    }
+  };
+
   return (
     <div className="w-full h-full overflow-y-auto">
-      <Editor 
+      <Editor
         handleEditorChange={handleEditorChange}
         content={content}
-        documentId={documentId} 
+        documentId={documentId}
         versionNumber={versionNumber}
-        onInlineSuggestionRequest={onInlineSuggestionRequest}
+        onInlineSuggestionRequest={handleInlineSuggestionRequest}
         pendingSuggestion={pendingSuggestion}
         onAcceptSuggestion={onAcceptSuggestion}
         onRejectSuggestion={onRejectSuggestion}

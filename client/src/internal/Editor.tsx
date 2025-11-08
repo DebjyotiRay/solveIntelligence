@@ -50,11 +50,11 @@ export default function Editor({
   const [provider] = useState(() => {
     const roomName = `document-${documentId}-v${versionNumber}`;
     console.log('Creating Hocuspocus provider for room:', roomName);
-    
+
     // Generate random user info for this session
     const randomColor = '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
     const randomName = 'User ' + Math.floor(Math.random() * 1000);
-    
+
     const prov = new HocuspocusProvider({
       url: 'ws://localhost:1234',
       name: roomName,
@@ -70,7 +70,7 @@ export default function Editor({
     });
 
     console.log('Provider created with user:', randomName);
-    
+
     return prov;
   });
 
@@ -102,11 +102,11 @@ export default function Editor({
     if (editor && activePanelSuggestion) {
       const editorTextContent = editor.state.doc.textContent;
       const targetText = activePanelSuggestion.issue.target?.text;
-      
+
       if (targetText) {
         // Simple text search
         const pos = editorTextContent.indexOf(targetText);
-        
+
         if (pos !== -1) {
           // Select/highlight the text
           editor.chain()
@@ -127,7 +127,7 @@ export default function Editor({
 
     // Check if editor is empty (has only one empty paragraph)
     const isEditorEmpty = editor.isEmpty;
-    
+
     if (isEditorEmpty) {
       console.log('Initializing editor with database content');
       editor.commands.setContent(content);
@@ -157,7 +157,7 @@ export default function Editor({
           onRejectSuggestion?.();
         }
       }
-      
+
       // Dismiss panel suggestion info on Escape
       if (activePanelSuggestion && event.key === 'Escape') {
         event.preventDefault();
@@ -180,7 +180,7 @@ export default function Editor({
       const { view } = editor;
       const coords = view.coordsAtPos(view.state.selection.from);
       const editorRect = view.dom.getBoundingClientRect();
-      
+
       const newCursorPosition = {
         x: coords.left - editorRect.left,
         y: coords.top - editorRect.top
@@ -195,67 +195,30 @@ export default function Editor({
     }
   }, [editor, pendingSuggestion]);
 
-  // Auto-fix handler
-  const handleAutoFix = () => {
-    if (!editor || !activePanelSuggestion) return;
-
-    const targetText = activePanelSuggestion.issue.target?.text;
-    const replacementText = activePanelSuggestion.issue.replacement?.text;
-
-    if (!targetText || !replacementText) {
-      console.warn('Cannot auto-fix: missing target or replacement text');
-      return;
-    }
-
-    try {
-      const docText = editor.state.doc.textContent;
-      const targetPos = docText.indexOf(targetText);
-
-      if (targetPos === -1) {
-        alert('Could not find the text to replace. It may have been edited.');
-        return;
-      }
-
-      // Apply fix - Yjs will sync to all collaborators!
-      const from = targetPos + 1;
-      const to = from + targetText.length;
-
-      editor.chain().focus().setTextSelection({ from, to }).insertContent(replacementText).run();
-
-      console.log(`✅ Auto-fix applied: "${targetText}" → "${replacementText}"`);
-
-      // Dismiss the panel
-      onDismissPanelSuggestion?.();
-    } catch (error) {
-      console.error('Error applying auto-fix:', error);
-      alert('Failed to apply fix. Please try manually.');
-    }
-  };
-
   // Track connected users
   useEffect(() => {
     if (!provider || !provider.awareness || !onOnlineUsersChange) return;
 
     const updateUsers = () => {
       if (!provider.awareness) return;
-      
+
       const states = Array.from(provider.awareness.getStates().entries()) as [number, { user?: CollaborationUser }][];
-      
+
       // Get current user
       const currentUserState = provider.awareness.getLocalState() as { user?: CollaborationUser } | null;
       const selfUser = currentUserState?.user;
-      
+
       // Get all users including self
       const allUsers: CollaborationUser[] = states
         .map(([, state]) => state.user)
         .filter((user): user is CollaborationUser => user !== undefined && user !== null);
-      
+
       // Get other users (excluding self)
       const otherUsers: CollaborationUser[] = states
         .filter(([clientId]) => clientId !== provider.awareness!.clientID)
         .map(([, state]) => state.user)
         .filter((user): user is CollaborationUser => user !== undefined && user !== null);
-      
+
       // Pass total count (including self) and other users list
       onOnlineUsersChange(allUsers.length, otherUsers, selfUser);
     };
@@ -272,7 +235,7 @@ export default function Editor({
   return (
     <div className="relative">
       <EditorContent editor={editor}></EditorContent>
-      
+
       {/* Display inline suggestion at cursor position - clean gray italics */}
       {pendingSuggestion && pendingSuggestion.suggested_text && cursorPosition && !activePanelSuggestion && (
         <div
@@ -295,16 +258,58 @@ export default function Editor({
         </div>
       )}
 
-      {/* Minimal inline suggestion hint */}
+      {/* Enhanced inline suggestion hint with knowledge badges */}
       {pendingSuggestion && pendingSuggestion.suggested_text && !activePanelSuggestion && (
         <div
-          className="fixed bottom-4 right-4 z-50 bg-gray-900 bg-opacity-75 rounded px-3 py-1.5 shadow-lg flex items-center gap-2 text-xs text-white"
+          className="fixed bottom-4 right-4 z-50 bg-gray-900 bg-opacity-90 rounded-lg px-4 py-2.5 shadow-xl flex items-center gap-3 text-xs text-white"
         >
-          <kbd className="px-1.5 py-0.5 bg-gray-700 rounded font-mono text-[10px]">Tab</kbd>
-          <span className="text-gray-300">accept</span>
-          <span className="text-gray-600">|</span>
-          <kbd className="px-1.5 py-0.5 bg-gray-700 rounded font-mono text-[10px]">Esc</kbd>
-          <span className="text-gray-300">dismiss</span>
+          {/* Knowledge Badges */}
+          <div className="flex items-center gap-1.5 border-r border-gray-700 pr-3">
+            {pendingSuggestion.legal_grounded && (
+              <span
+                className="knowledge-badge legal"
+                title="Grounded in Indian Legal Knowledge (1634 laws)"
+              >
+                📚 Legal
+              </span>
+            )}
+            {pendingSuggestion.firm_grounded && (
+              <span
+                className="knowledge-badge firm"
+                title="Grounded in Your Firm's Knowledge"
+              >
+                💼 Firm
+              </span>
+            )}
+            {pendingSuggestion.client_grounded && (
+              <span
+                className="knowledge-badge client"
+                title="Personalized based on Your History"
+              >
+                📋 You
+              </span>
+            )}
+            {!pendingSuggestion.legal_grounded && !pendingSuggestion.firm_grounded && !pendingSuggestion.client_grounded && (
+              <span className="text-gray-500 text-[10px]">AI</span>
+            )}
+          </div>
+
+          {/* Confidence */}
+          <div className="flex items-center gap-1.5 border-r border-gray-700 pr-3">
+            <span className="text-gray-400 text-[10px]">Confidence:</span>
+            <span className="font-semibold text-green-400">
+              {Math.round((pendingSuggestion.confidence || 0.75) * 100)}%
+            </span>
+          </div>
+
+          {/* Keyboard shortcuts */}
+          <div className="flex items-center gap-2">
+            <kbd className="px-1.5 py-0.5 bg-gray-700 rounded font-mono text-[10px]">Tab</kbd>
+            <span className="text-gray-300">accept</span>
+            <span className="text-gray-600">|</span>
+            <kbd className="px-1.5 py-0.5 bg-gray-700 rounded font-mono text-[10px]">Esc</kbd>
+            <span className="text-gray-300">dismiss</span>
+          </div>
         </div>
       )}
 
@@ -350,7 +355,7 @@ export default function Editor({
           <div className="bg-white border rounded p-3 mb-3">
             <div className="text-xs font-medium text-gray-700 mb-2">How to Fix:</div>
             <p className="text-sm text-gray-800 mb-3">{activePanelSuggestion.issue.suggestion}</p>
-            
+
             {activePanelSuggestion.issue.replacement?.text && (
               <div className="mt-3">
                 <div className="text-xs text-gray-500 mb-1">Suggested Text:</div>
@@ -358,22 +363,14 @@ export default function Editor({
                   <div className="font-mono text-sm text-green-900 wrap-break-word">
                     {activePanelSuggestion.issue.replacement.text}
                   </div>
-                  <div className="flex gap-2 mt-2">
-                    <button
-                      onClick={handleAutoFix}
-                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium py-1.5 px-3 rounded transition-colors"
-                    >
-                      ✨ Insert Fix
-                    </button>
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(activePanelSuggestion.issue.replacement!.text);
-                      }}
-                      className="text-xs text-green-700 hover:text-green-900 underline"
-                    >
-                      📋 Copy
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(activePanelSuggestion.issue.replacement!.text);
+                    }}
+                    className="mt-2 text-xs text-green-700 hover:text-green-900 underline"
+                  >
+                    📋 Copy to Clipboard
+                  </button>
                 </div>
               </div>
             )}
@@ -381,7 +378,7 @@ export default function Editor({
 
           {/* Instructions */}
           <div className="text-xs text-gray-600">
-            
+
             <div className="mt-2">
               <kbd className="px-2 py-1 bg-gray-200 text-gray-700 rounded font-mono">Esc</kbd>
               <span className="ml-1">to close</span>

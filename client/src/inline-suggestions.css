@@ -2,3 +2,48 @@
 .inline-suggestion {
   /* Styles are now defined inline in the extension for better control */
 }
+
+/* 🚀 Knowledge Badge Styles - 3-Tier Memory System Visualization */
+.knowledge-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  transition: all 0.2s ease;
+}
+
+.knowledge-badge.legal {
+  background-color: rgba(59, 130, 246, 0.2); /* Blue */
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.knowledge-badge.legal:hover {
+  background-color: rgba(59, 130, 246, 0.3);
+  transform: scale(1.05);
+}
+
+.knowledge-badge.firm {
+  background-color: rgba(168, 85, 247, 0.2); /* Purple */
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.knowledge-badge.firm:hover {
+  background-color: rgba(168, 85, 247, 0.3);
+  transform: scale(1.05);
+}
+
+.knowledge-badge.client {
+  background-color: rgba(34, 197, 94, 0.2); /* Green */
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.knowledge-badge.client:hover {
+  background-color: rgba(34, 197, 94, 0.3);
+  transform: scale(1.05);
+}
