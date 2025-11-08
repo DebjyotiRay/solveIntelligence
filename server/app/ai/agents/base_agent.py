@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 
 from ..workflow.patent_state import PatentAnalysisState, update_agent_progress, AgentStatus
+from ...services.memory_service import get_memory_service
 from ..types import StructureAnalysisResult, LegalAnalysisResult
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,8 @@ class BasePatentAgent(ABC):
         self.agent_name = agent_name
         self.max_retries = max_retries
         self.logger = logging.getLogger(f"agent.{agent_name}")
+        # Provide a memory interface for agents (stubbed if not configured)
+        self.memory = get_memory_service()
 
     @abstractmethod
     async def analyze(

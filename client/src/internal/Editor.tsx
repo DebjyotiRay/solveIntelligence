@@ -1,49 +1,28 @@
-import { useEffect, useState } from "react";
-import { EditorContent, useEditor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import Collaboration from "@tiptap/extension-collaboration";
-import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
-import { HocuspocusProvider } from '@hocuspocus/provider';
-import * as Y from "yjs";
-import { InlineSuggestions } from "../extensions/InlineSuggestions";
-import { InlineSuggestionResponse, PanelSuggestion } from "../types/PatentTypes";
-import "../inline-suggestions.css";
-import "../collaboration.css";
-
-export interface EditorProps {
-  handleEditorChange: (content: string) => void;
-  content: string;
-  documentId: number;
-  versionNumber: number;
-  // Inline suggestion props
-  onInlineSuggestionRequest?: (content: string, pos: number, before: string, after: string, triggerType?: string) => void;
-  pendingSuggestion?: InlineSuggestionResponse | null;
-  onAcceptSuggestion?: (suggestion: InlineSuggestionResponse) => void;
-  onRejectSuggestion?: () => void;
-  // Panel suggestion props - simplified to just show location
-  activePanelSuggestion?: PanelSuggestion | null;
-  onDismissPanelSuggestion?: () => void;
-  // Online users callback
-  onOnlineUsersChange?: (count: number, users: CollaborationUser[], selfUser?: CollaborationUser) => void;
-}
+import { Textarea } from '../components/ui';
+import { InlineSuggestionResponse, PanelSuggestion } from '../types/PatentTypes';
 
 interface CollaborationUser {
   name: string;
   color: string;
 }
 
-export default function Editor({
-  handleEditorChange,
-  content,
-  documentId,
-  versionNumber,
-  onInlineSuggestionRequest,
-  pendingSuggestion,
-  onAcceptSuggestion,
-  onRejectSuggestion,
-  activePanelSuggestion,
-  onDismissPanelSuggestion,
-  onOnlineUsersChange
+interface EditorProps {
+  handleEditorChange: (content: string) => void;
+  content: string;
+  documentId: number;
+  versionNumber: number;
+  onInlineSuggestionRequest?: (content: string, pos: number, before: string, after: string) => void;
+  pendingSuggestion?: InlineSuggestionResponse | null;
+  onAcceptSuggestion?: (suggestion: InlineSuggestionResponse) => void;
+  onRejectSuggestion?: () => void;
+  activePanelSuggestion?: PanelSuggestion | null;
+  onDismissPanelSuggestion?: () => void;
+  onOnlineUsersChange?: (count: number, users: CollaborationUser[], selfUser?: CollaborationUser) => void;
+}
+
+export default function Editor({ 
+  handleEditorChange, 
+  content 
 }: EditorProps) {
   const [cursorPosition, setCursorPosition] = useState<{x: number, y: number} | null>(null);
   const [ydoc] = useState(() => new Y.Doc());

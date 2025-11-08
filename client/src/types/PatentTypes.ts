@@ -1,13 +1,11 @@
-// Consolidated type definitions for patent analysis
-
 export interface PatentIssue {
-  type: string;
-  severity: 'high' | 'medium' | 'low';
-  paragraph?: number;
+  issue_type: string;
+  severity: string;
   description: string;
   suggestion: string;
-  target?: {
-    text?: string; // Text to find and highlight
+  location?: {
+    start: number;
+    end: number;
   };
   replacement?: {
     type: 'add' | 'replace' | 'insert';
@@ -40,37 +38,21 @@ export interface PanelSuggestion {
   issue: PatentIssue;
 }
 
+export interface InlineSuggestionResponse {
+  original_text: string;
+  suggested_text: string;
+  reason: string;
+}
+
 export interface AnalysisResult {
-  status: 'analyzing' | 'complete' | 'error' | 'streaming';
-  message?: string;
-  analysis?: {
-    issues: PatentIssue[];
-  };
-  total_issues?: number;
-  overall_score?: number;
-  agents_used?: string[];
-  timestamp?: string;
-  error?: string;
-  raw_content?: string;
-  parse_error?: string;
-  // Multi-agent specific fields
-  system_type?: string;
-  workflow?: string;
-  agents?: string[];
-  memory_enabled?: boolean;
-  orchestrator?: string;
-  phase?: string;
-  agent?: string;
+  document_id: number;
+  version_number: number;
+  issues: PatentIssue[];
+  summary?: string;
 }
 
 export interface StreamUpdate {
-  status: 'analyzing';
   phase?: string;
-  agent?: string;
-  message: string;
-  system_type?: string;
-  workflow?: string;
-  agents?: string[];
-  memory_enabled?: boolean;
-  orchestrator?: string;
+  content?: string;
+  issue?: PatentIssue;
 }

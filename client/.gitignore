@@ -11,12 +11,14 @@ node_modules
 dist
 dist-ssr
 *.local
-
+.venv
+venv
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
 .idea
 .DS_Store
+Thumbs.db
 *.suo
 *.ntvs*
 *.njsproj
@@ -26,3 +28,22 @@ dist-ssr
 # Vite dependencies
 .vite/
 .vite/deps/
+
+# TypeScript
+*.tsbuildinfo
+
+# Lint/cache
+.eslintcache
+.cache/
+
+# Test / Coverage
+coverage/
+.nyc_output/
+
+# Env files (keep example committed)
+.env
+.env.*
+!.env.example
+
+# Storybook / misc static builds
+storybook-static/

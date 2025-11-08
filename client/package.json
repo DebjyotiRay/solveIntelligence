@@ -23,10 +23,12 @@
     "@tiptap/starter-kit": "^2.2.4",
     "axios": "^1.6.7",
     "lodash": "^4.17.21",
+    "lucide-react": "^0.451.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-use-websocket": "^3.0.0",
     "tailwindcss": "^4.1.7",
+    "tailwindcss-animate": "^1.0.7",
     "yjs": "^13.6.27"
   },
   "devDependencies": {

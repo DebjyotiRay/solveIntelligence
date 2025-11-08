@@ -1,32 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
-import { flushSync } from 'react-dom';
-import { 
-  AnalysisResult, 
-  StreamUpdate, 
-  InlineSuggestionResponse 
-} from '../types/PatentTypes';
+import { useState } from 'react';
+import { AnalysisResult, InlineSuggestionResponse, StreamUpdate } from '../types/PatentTypes';
 
-type WebSocketResponse = AnalysisResult | InlineSuggestionResponse;
-
-interface UseWebSocketReturn {
-  isConnected: boolean;
-  requestAISuggestions: (content: string) => void;
-  analysisResult: AnalysisResult | null;
-  isAnalyzing: boolean;
-  currentPhase?: string;
-  streamUpdates: StreamUpdate[];
-  requestInlineSuggestion: (content: string, cursorPos: number, contextBefore: string, contextAfter: string, triggerType?: string, documentId?: number | string) => void;
-  pendingSuggestion: InlineSuggestionResponse | null;
-  acceptInlineSuggestion: (suggestion: InlineSuggestionResponse) => void;
-  rejectInlineSuggestion: () => void;
-  clearPendingSuggestion: () => void;
-}
-
-export const useSocket = (): UseWebSocketReturn => {
-  const [isConnected, setIsConnected] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+export function useSocket() {
+  const [isConnected] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [currentPhase, setCurrentPhase] = useState<string | undefined>(undefined);
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [currentPhase, setCurrentPhase] = useState<string>('');
   const [streamUpdates, setStreamUpdates] = useState<StreamUpdate[]>([]);
   const [pendingSuggestion, setPendingSuggestion] = useState<InlineSuggestionResponse | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -266,26 +245,22 @@ export const useSocket = (): UseWebSocketReturn => {
   };
 
   const acceptInlineSuggestion = (suggestion: InlineSuggestionResponse) => {
-    console.log('✅ Accepting inline suggestion:', suggestion.suggested_text);
     setPendingSuggestion(null);
-    // The editor will handle applying the suggestion to the content
   };
 
   const rejectInlineSuggestion = () => {
-    console.log('❌ Rejecting inline suggestion');
     setPendingSuggestion(null);
   };
 
   const clearPendingSuggestion = () => {
-    console.log('🧹 Clearing pending inline suggestion');
     setPendingSuggestion(null);
   };
 
   return {
     isConnected,
-    requestAISuggestions,
-    analysisResult,
     isAnalyzing,
+    analysisResult,
+    requestAISuggestions,
     currentPhase,
     streamUpdates,
     requestInlineSuggestion,
@@ -294,4 +269,4 @@ export const useSocket = (): UseWebSocketReturn => {
     rejectInlineSuggestion,
     clearPendingSuggestion
   };
-};
+}

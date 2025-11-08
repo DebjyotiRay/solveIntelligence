@@ -2,11 +2,20 @@ import { useEffect, useState, useCallback } from "react";
 import axios from "axios";
 import Document from "./Document";
 import LoadingOverlay from "./internal/LoadingOverlay";
-import Logo from "./assets/logo.png";
 import SuggestionsPanel from "./components/SuggestionsPanel";
 import { ChatPanel } from "./components/ChatPanel";
 import { useSocket } from "./hooks/useSocket";
 import { PatentIssue, PanelSuggestion } from "./types/PatentTypes";
+import { Button } from "./components/UI";
+import { 
+  FileText, 
+  Save, 
+  Plus, 
+  Sparkles, 
+  Users,
+  AlertCircle,
+  CheckCircle
+} from "lucide-react";
 
 const BACKEND_URL = "http://localhost:8000";
 
@@ -29,17 +38,21 @@ interface CollaborationUser {
   color: string;
 }
 
-function App() {
+interface AppProps {
+  initialDocumentId?: number;
+}
+
+function App({ initialDocumentId }: AppProps) {
   // Stateless frontend state management
   const [currentDocumentContent, setCurrentDocumentContent] = useState<string>("");
   const [currentDocumentId, setCurrentDocumentId] = useState<number>(0);
   const [currentDocumentInfo, setCurrentDocumentInfo] = useState<DocumentInfo | null>(null);
   const [selectedVersionNumber, setSelectedVersionNumber] = useState<number>(1);
   const [availableVersions, setAvailableVersions] = useState<DocumentVersion[]>([]);
-  const [isDirty, setIsDirty] = useState<boolean>(false);  // Has content been modified?
+  const [isDirty, setIsDirty] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  // Panel suggestion state - simplified to just show location
+  // Panel suggestion state
   const [activePanelSuggestion, setActivePanelSuggestion] = useState<PanelSuggestion | null>(null);
   
   // Online users state
@@ -47,7 +60,7 @@ function App() {
   const [onlineUsers, setOnlineUsers] = useState<CollaborationUser[]>([]);
   const [currentUser, setCurrentUser] = useState<CollaborationUser | null>(null);
 
-  // WebSocket integration for AI suggestions with multi-agent streaming
+  // WebSocket integration for AI suggestions
   const {
     isConnected,
     isAnalyzing,
@@ -59,91 +72,76 @@ function App() {
     pendingSuggestion,
     acceptInlineSuggestion,
     rejectInlineSuggestion,
-    clearPendingSuggestion
   } = useSocket();
 
-  // Load the first patent on mount
+  // Load initial document on mount
   useEffect(() => {
-    loadPatent(1);
+    if (initialDocumentId) {
+      loadPatent(initialDocumentId);
+    } else {
+      loadPatent(1);
+    }
   }, []);
 
-  // Clear pending inline suggestions when document version changes (not on every edit!)
-  useEffect(() => {
-    clearPendingSuggestion();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedVersionNumber, currentDocumentId]);
-
-  const loadPatent = async (documentNumber: number) => {
+  const loadPatent = async (documentId: number) => {
     setIsLoading(true);
     try {
-      // Load document metadata (stateless - no content in document)
-      const docResponse = await axios.get(
-        `${BACKEND_URL}/document/${documentNumber}`
-      );
+      const token = localStorage.getItem('token');
+      const base = token ? `${BACKEND_URL}/secure` : `${BACKEND_URL}`;
+      
+      const infoResponse = await axios.get(`${base}/document/${documentId}`);
+      setCurrentDocumentInfo(infoResponse.data);
 
-      // Load all versions
-      const versionsResponse = await axios.get(
-        `${BACKEND_URL}/document/${documentNumber}/versions`
-      );
-
-      const versions = versionsResponse.data.versions;
-      setCurrentDocumentId(documentNumber);
-      setCurrentDocumentInfo(docResponse.data);
+      const versionsResponse = await axios.get(`${base}/document/${documentId}/versions`);
+      const versions = versionsResponse.data;
       setAvailableVersions(versions);
 
-      // Load the latest version as the starting content
       if (versions.length > 0) {
-        const latestVersion = versions[versions.length - 1];
-        setCurrentDocumentContent(latestVersion.content);
-        setSelectedVersionNumber(latestVersion.version_number);
+        const latest = versions[versions.length - 1];
+        setCurrentDocumentContent(latest.content);
+        setSelectedVersionNumber(latest.version_number);
       }
 
+      setCurrentDocumentId(documentId);
       setIsDirty(false);
     } catch (error) {
-      console.error("Error loading document:", error);
+      console.error("Error loading patent:", error);
     }
     setIsLoading(false);
   };
 
-  // Update current version with new content
   const saveCurrentVersion = async () => {
-    if (!isDirty) return; // Nothing to save
-
     setIsLoading(true);
     try {
-      const currentVersion = availableVersions.find(v => v.version_number === selectedVersionNumber);
-      await axios.put(`${BACKEND_URL}/document/${currentDocumentId}/versions/${selectedVersionNumber}`, {
-        content: currentDocumentContent,
-        name: currentVersion?.name || `Version ${selectedVersionNumber}`
+      const token = localStorage.getItem('token');
+      const base = token ? `${BACKEND_URL}/secure` : `${BACKEND_URL}`;
+      
+      await axios.put(`${base}/document/${currentDocumentId}/versions/${selectedVersionNumber}`, {
+        content: currentDocumentContent
       });
-
-      // Update the local state to reflect the saved content
-      setAvailableVersions(prev =>
-        prev.map(version =>
-          version.version_number === selectedVersionNumber
-            ? { ...version, content: currentDocumentContent }
-            : version
-        )
-      );
-
+      
       setIsDirty(false);
+      
+      const updatedVersionsResponse = await axios.get(`${base}/document/${currentDocumentId}/versions`);
+      setAvailableVersions(updatedVersionsResponse.data);
     } catch (error) {
       console.error("Error saving version:", error);
     }
     setIsLoading(false);
   };
 
-  // Create a new version from current content
   const createNewVersion = async () => {
     setIsLoading(true);
     try {
-      const response = await axios.post(`${BACKEND_URL}/document/${currentDocumentId}/versions`, {
+      const token = localStorage.getItem('token');
+      const base = token ? `${BACKEND_URL}/secure` : `${BACKEND_URL}`;
+      
+      const response = await axios.post(`${base}/document/${currentDocumentId}/versions`, {
         content: currentDocumentContent,
         name: `Version ${availableVersions.length + 1}`
       });
       const newVersion = response.data;
 
-      // Update the available versions list and switch to new version
       setAvailableVersions(prev => [...prev, newVersion]);
       setSelectedVersionNumber(newVersion.version_number);
       setIsDirty(false);
@@ -153,11 +151,9 @@ function App() {
     setIsLoading(false);
   };
 
-  // Switch to a different version (Google Docs style)
   const switchToVersion = async (versionNumber: number) => {
-    if (versionNumber === selectedVersionNumber) return; // No change needed
+    if (versionNumber === selectedVersionNumber) return;
 
-    // Warn if there are unsaved changes
     if (isDirty) {
       const confirmSwitch = window.confirm(
         "You have unsaved changes. Do you want to switch versions without saving? Your changes will be lost."
@@ -173,7 +169,6 @@ function App() {
     }
   };
 
-  // Handle content changes (mark as dirty)
   const handleContentChange = (content: string) => {
     console.log('📝 Content changed, new length:', content.length);
     console.log('📝 Content preview:', content.substring(0, 200));
@@ -181,7 +176,6 @@ function App() {
     setIsDirty(true);
   };
 
-  // Handle AI suggestion requests from Document component
   const handleRequestSuggestions = (content: string) => {
     console.log('🔍 Analysis requested with content length:', content.length);
     console.log('🔍 Content preview:', content.substring(0, 200));
@@ -194,11 +188,9 @@ function App() {
   };
 
   const handleShowSuggestionLocation = (issue: PatentIssue) => {
-    // Simply pass the issue to the editor to highlight the location
     const panelSuggestion: PanelSuggestion = {
       issue
     };
-    
     setActivePanelSuggestion(panelSuggestion);
   };
 
@@ -215,182 +207,189 @@ function App() {
   }, []);
 
   return (
-    <div className="flex flex-col h-full w-full">
+    <div className="flex flex-col h-screen w-full bg-background">
       {isLoading && <LoadingOverlay />}
-      <header className="flex items-center justify-center top-0 w-full bg-black text-white text-center z-50 mb-[30px] h-[80px]">
-        <img src={Logo} alt="Logo" style={{ height: "50px" }} />
-      </header>
-      <div className="flex w-full bg-white h-[calc(100%-100px)] gap-4 justify-center">
-        {/* Left Sidebar - Document Selection & Controls */}
-        <div className="flex flex-col h-full items-center gap-4 px-4 w-48 bg-gray-50 border-r">
-          <div className="w-full space-y-2">
-            <button 
-              onClick={() => loadPatent(1)}
-              className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-            >
-              Patent 1
-            </button>
-            <button 
-              onClick={() => loadPatent(2)}
-              className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-            >
-              Patent 2
-            </button>
-          </div>
+      
+      {/* Header */}
+      <header className="flex-shrink-0 border-b border-border bg-card/80 backdrop-blur-xl">
+        <div className="flex items-center justify-between px-6 py-4">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-accent shadow-lg">
+                <FileText className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h1 className="text-lg font-bold text-foreground">
+                  {currentDocumentInfo?.title || `Patent ${currentDocumentId}`}
+                  {isDirty && <span className="text-destructive ml-2">*</span>}
+                </h1>
+                {availableVersions.length > 0 && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span>Version:</span>
+                    <select
+                      value={selectedVersionNumber}
+                      onChange={(e) => switchToVersion(Number(e.target.value))}
+                      className="border border-input rounded-md px-2 py-1 bg-card text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    >
+                      {availableVersions.map(version => (
+                        <option key={version.version_number} value={version.version_number}>
+                          {version.name || `v${version.version_number}`}
+                        </option>
+                      ))}
+                    </select>
+                    {isDirty && (
+                      <span className="text-destructive font-medium ml-1">
+                        (unsaved)
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
 
-          {/* Version Control */}
-          <div className="w-full space-y-2">
-            <button
-              onClick={saveCurrentVersion}
-              disabled={!isDirty || isLoading}
-              className={`w-full px-4 py-2 rounded text-sm ${
-                isDirty && !isLoading
-                  ? "bg-green-500 hover:bg-green-600 text-white"
-                  : "bg-gray-300 text-gray-500 cursor-not-allowed"
-              }`}
-            >
-              {isDirty ? `Save v${selectedVersionNumber}` : `Saved`}
-            </button>
-            <button
-              onClick={createNewVersion}
-              disabled={isLoading}
-              className="w-full px-4 py-2 bg-orange-500 text-white rounded hover:bg-orange-600 disabled:bg-gray-300 disabled:text-gray-500 text-sm"
-            >
-              New Version
-            </button>
-            {availableVersions.length > 1 && (
-              <div className="text-xs text-gray-500 text-center">
-                {availableVersions.length} versions available
+            {/* Online Users Indicator */}
+            {(onlineUsersCount > 0 || currentUser) && (
+              <div className="flex items-center gap-2 bg-muted rounded-full px-3 py-1.5">
+                <Users className="w-4 h-4 text-muted-foreground" />
+                <div className="flex -space-x-2">
+                  {currentUser && (
+                    <div
+                      className="w-7 h-7 rounded-full border-2 border-card flex items-center justify-center text-white text-xs font-bold"
+                      style={{ backgroundColor: currentUser.color }}
+                      title={`${currentUser.name} (You)`}
+                    >
+                      {currentUser.name?.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  {onlineUsers.map((user, index) => (
+                    <div
+                      key={index}
+                      className="w-7 h-7 rounded-full border-2 border-card flex items-center justify-center text-white text-xs font-bold"
+                      style={{ backgroundColor: user.color }}
+                      title={user.name}
+                    >
+                      {user.name?.charAt(0).toUpperCase()}
+                    </div>
+                  ))}
+                </div>
+                <span className="text-xs text-muted-foreground font-medium ml-1">
+                  {onlineUsersCount + 1} online
+                </span>
               </div>
             )}
           </div>
 
-          {/* AI Analysis Button - Professional */}
-          <button
-            onClick={() => handleRequestSuggestions(currentDocumentContent)}
-            disabled={!isConnected || isLoading}
-            className="w-full px-4 py-3 bg-slate-800 text-white rounded border hover:bg-slate-700 disabled:bg-gray-300 disabled:text-gray-500 text-sm font-medium transition-colors"
-          >
-            AI Document Analysis
-          </button>
+          <div className="flex items-center gap-3">
+            {/* Connection Status */}
+            <div className="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg bg-muted">
+              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-success' : 'bg-destructive'}`}></div>
+              <span className="text-xs text-muted-foreground font-medium">
+                {isConnected ? 'AI Connected' : 'AI Offline'}
+              </span>
+            </div>
 
-          {/* Connection Status */}
-          <div className="flex items-center gap-2 text-sm">
-            <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
-            <span className="text-gray-600 font-medium">
-              {isConnected ? 'AI Connected' : 'AI Offline'}
-            </span>
+            {/* Quick Switch Documents */}
+            <div className="flex gap-2">
+              <Button 
+                variant="secondary" 
+                size="sm"
+                onClick={() => loadPatent(1)}
+              >
+                Patent 1
+              </Button>
+              <Button 
+                variant="secondary" 
+                size="sm"
+                onClick={() => loadPatent(2)}
+              >
+                Patent 2
+              </Button>
+            </div>
           </div>
         </div>
 
-        {/* Main Content Area - AI Analysis Takes Center Stage */}
-        <div className="flex-1 flex flex-col h-full">
-          {/* Top Header Bar */}
-          <div className="flex items-center justify-between p-4 bg-white border-b border-gray-200">
-            <div className="flex items-center gap-4">
-              <h2 className="text-[#213547] text-xl font-bold">
-                {currentDocumentInfo?.title || `Patent ${currentDocumentId}`}
-                {isDirty && <span className="text-red-500 ml-2">*</span>}
-              </h2>
-              {availableVersions.length > 0 && (
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600 font-medium">Version:</span>
-                  <select
-                    value={selectedVersionNumber}
-                    onChange={(e) => switchToVersion(Number(e.target.value))}
-                    className="border border-gray-300 rounded px-3 py-1 text-sm focus:ring-2 focus:ring-blue-500"
-                  >
-                    {availableVersions.map(version => (
-                      <option key={version.version_number} value={version.version_number}>
-                        {version.name || `v${version.version_number}`}
-                      </option>
-                    ))}
-                  </select>
-                  {isDirty && (
-                    <span className="text-xs text-red-500 ml-2 font-medium">
-                      (unsaved changes)
-                    </span>
-                  )}
-                </div>
-              )}
-              
-              {/* Online Users Indicator */}
-              {(onlineUsersCount > 0 || currentUser) && (
-                <div className="flex items-center gap-2 bg-white rounded-full px-3 py-1 shadow-sm border border-gray-200">
-                  <div className="flex -space-x-2">
-                    {/* Show current user first */}
-                    {currentUser && (
-                      <div
-                        className="w-7 h-7 rounded-full border-2 border-white flex items-center justify-center text-white text-xs font-bold"
-                        style={{ backgroundColor: currentUser.color }}
-                        title={`${currentUser.name} (You)`}
-                      >
-                        {currentUser.name?.charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                    {/* Show other users */}
-                    {onlineUsers.map((user, index) => (
-                      <div
-                        key={index}
-                        className="w-7 h-7 rounded-full border-2 border-white flex items-center justify-center text-white text-xs font-bold"
-                        style={{ backgroundColor: user.color }}
-                        title={user.name}
-                      >
-                        {user.name?.charAt(0).toUpperCase()}
-                      </div>
-                    ))}
-                  </div>
-                  <span className="text-xs text-gray-600 font-medium">
-                    {onlineUsersCount + 1} online
-                  </span>
-                </div>
-              )}
-            </div>
-            
-            {/* Large Prominent AI Analysis Button */}
-            <button
-              onClick={() => handleRequestSuggestions(currentDocumentContent)}
-              disabled={!isConnected || isLoading}
-              className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:text-gray-500 text-base font-semibold shadow-lg transition-all"
+        {/* Action Bar */}
+        <div className="flex items-center justify-between px-6 py-3 border-t border-border bg-muted/30">
+          <div className="flex items-center gap-3">
+            <Button
+              onClick={saveCurrentVersion}
+              disabled={!isDirty || isLoading}
+              variant={isDirty ? "success" : "secondary"}
+              size="sm"
             >
-              {isAnalyzing ? 'Analyzing...' : 'Run AI Analysis'}
-            </button>
+              {isDirty ? (
+                <>
+                  <Save className="w-4 h-4 mr-2" />
+                  Save v{selectedVersionNumber}
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-4 h-4 mr-2" />
+                  Saved
+                </>
+              )}
+            </Button>
+            <Button
+              onClick={createNewVersion}
+              disabled={isLoading}
+              variant="secondary"
+              size="sm"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              New Version
+            </Button>
+            {availableVersions.length > 1 && (
+              <span className="text-xs text-muted-foreground">
+                {availableVersions.length} versions
+              </span>
+            )}
           </div>
 
-          {/* Split Layout: Document + AI Analysis */}
-          <div className="flex-1 flex overflow-hidden">
-            {/* Document Editor - Left 60% */}
-            <div className="w-3/5 h-full border-r border-gray-200">
-              <Document
-                onContentChange={handleContentChange}
-                content={currentDocumentContent}
-                documentId={currentDocumentId}
-                versionNumber={selectedVersionNumber}
-                onInlineSuggestionRequest={requestInlineSuggestion}
-                pendingSuggestion={pendingSuggestion}
-                onAcceptSuggestion={acceptInlineSuggestion}
-                onRejectSuggestion={rejectInlineSuggestion}
-                activePanelSuggestion={activePanelSuggestion}
-                onDismissPanelSuggestion={handleDismissPanelSuggestion}
-                onOnlineUsersChange={handleOnlineUsersChange}
-              />
-            </div>
+          <Button
+            onClick={() => handleRequestSuggestions(currentDocumentContent)}
+            disabled={!isConnected || isLoading}
+            variant="primary"
+            size="md"
+            className="px-6"
+          >
+            <Sparkles className="w-4 h-4 mr-2" />
+            {isAnalyzing ? 'Analyzing...' : 'Run AI Analysis'}
+          </Button>
+        </div>
+      </header>
 
-            {/* AI Analysis - Right 40% - Fixed scrolling */}
-            <div className="w-2/5 h-full flex flex-col">
-              <SuggestionsPanel
-                currentDocumentId={currentDocumentId}
-                selectedVersionNumber={selectedVersionNumber}
-                isConnected={isConnected}
-                isAnalyzing={isAnalyzing}
-                analysisResult={analysisResult}
-                currentPhase={currentPhase}
-                streamUpdates={streamUpdates}
-                onShowSuggestionLocation={handleShowSuggestionLocation}
-                activeSuggestion={activePanelSuggestion?.issue || null}
-              />
-            </div>
-          </div>
+      {/* Main Content */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Document Editor - Left 60% */}
+        <div className="w-3/5 h-full border-r border-border bg-background">
+          <Document
+            onContentChange={handleContentChange}
+            content={currentDocumentContent}
+            documentId={currentDocumentId}
+            versionNumber={selectedVersionNumber}
+            onInlineSuggestionRequest={requestInlineSuggestion}
+            pendingSuggestion={pendingSuggestion}
+            onAcceptSuggestion={acceptInlineSuggestion}
+            onRejectSuggestion={rejectInlineSuggestion}
+            activePanelSuggestion={activePanelSuggestion}
+            onDismissPanelSuggestion={handleDismissPanelSuggestion}
+            onOnlineUsersChange={handleOnlineUsersChange}
+          />
+        </div>
+
+        {/* AI Analysis - Right 40% */}
+        <div className="w-2/5 h-full flex flex-col bg-muted/10">
+          <SuggestionsPanel
+            currentDocumentId={currentDocumentId}
+            selectedVersionNumber={selectedVersionNumber}
+            isConnected={isConnected}
+            isAnalyzing={isAnalyzing}
+            analysisResult={analysisResult}
+            currentPhase={currentPhase}
+            streamUpdates={streamUpdates}
+            onShowSuggestionLocation={handleShowSuggestionLocation}
+            activeSuggestion={activePanelSuggestion?.issue || null}
+          />
         </div>
       </div>
 
