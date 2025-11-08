@@ -251,10 +251,23 @@ class PatentAnalysisCoordinator:
         structure_analysis = state.get("structure_analysis", {})
         legal_analysis = state.get("legal_analysis", {})
         
-        # Collect all issues
+        # Collect all issues and convert Pydantic models to dicts
         all_issues = []
-        all_issues.extend(structure_analysis.get('issues', []))
-        all_issues.extend(legal_analysis.get('issues', []))
+        for issue in structure_analysis.get('issues', []):
+            if hasattr(issue, 'model_dump'):  # Pydantic v2
+                all_issues.append(issue.model_dump())
+            elif hasattr(issue, 'dict'):  # Pydantic v1
+                all_issues.append(issue.dict())
+            else:  # Already a dict
+                all_issues.append(issue)
+                
+        for issue in legal_analysis.get('issues', []):
+            if hasattr(issue, 'model_dump'):  # Pydantic v2
+                all_issues.append(issue.model_dump())
+            elif hasattr(issue, 'dict'):  # Pydantic v1
+                all_issues.append(issue.dict())
+            else:  # Already a dict
+                all_issues.append(issue)
         
         # Collect recommendations
         recommendations = []

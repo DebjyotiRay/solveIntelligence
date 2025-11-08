@@ -460,7 +460,7 @@ class IndianLawPDFProcessor:
                 "chunker": self.chunk_evidence_act
             },
             {
-                "filename": "constitution_of_india.pdf",
+                "filename": "constitution.pdf",
                 "name": "Constitution of India",
                 "chunker": self.chunk_constitution
             }

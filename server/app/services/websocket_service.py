@@ -34,8 +34,9 @@ class WebSocketService:
         context_before = request.get("context_before", "")
         context_after = request.get("context_after", "")
         suggestion_type = request.get("suggestion_type", "completion")
+        client_id = request.get("client_id", request.get("document_id", "default_client"))
 
-        print(f"💡 Inline suggestion request: type={suggestion_type}, cursor_pos={cursor_pos}")
+        print(f"💡 Inline suggestion request: type={suggestion_type}, cursor_pos={cursor_pos}, client={client_id}")
 
         suggestions_service = InlineSuggestionsService()
         result = await suggestions_service.generate_suggestion(
@@ -43,11 +44,18 @@ class WebSocketService:
             cursor_pos=cursor_pos,
             context_before=context_before,
             context_after=context_after,
-            suggestion_type=suggestion_type
+            suggestion_type=suggestion_type,
+            client_id=client_id
         )
 
         suggested_text = result["suggested_text"]
         reasoning = result["reasoning"]
+        confidence = result.get("confidence", 0.8)
+
+        # 🚀 NEW: Include grounding flags for visual badges
+        legal_grounded = result.get("legal_grounded", False)
+        firm_grounded = result.get("firm_grounded", False)
+        client_grounded = result.get("client_grounded", False)
 
         response = {
             "status": "inline_suggestion",
@@ -55,13 +63,28 @@ class WebSocketService:
             "original_text": context_before,
             "suggested_text": suggested_text,
             "position": {"from": cursor_pos, "to": cursor_pos},
-            "confidence": 0.8,
+            "confidence": confidence,
             "reasoning": reasoning,
-            "type": suggestion_type
+            "type": suggestion_type,
+            # 🚀 NEW: Grounding information for badges
+            "legal_grounded": legal_grounded,
+            "firm_grounded": firm_grounded,
+            "client_grounded": client_grounded
         }
 
         await websocket.send_text(json.dumps(response))
-        print(f"✅ Sent inline suggestion: '{suggested_text}'")
+
+        # Pretty print grounding info
+        grounding_badges = []
+        if legal_grounded:
+            grounding_badges.append("📚 Legal")
+        if firm_grounded:
+            grounding_badges.append("💼 Firm")
+        if client_grounded:
+            grounding_badges.append("📋 Client")
+
+        grounding_str = " + ".join(grounding_badges) if grounding_badges else "No grounding"
+        print(f"✅ Sent inline suggestion: '{suggested_text}' ({grounding_str}, {int(confidence*100)}%)")
 
     @staticmethod
     async def _handle_multi_agent_analysis(websocket: WebSocket):

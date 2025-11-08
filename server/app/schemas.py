@@ -41,3 +41,48 @@ class DocumentVersionUpdate(BaseModel):
 
 class DocumentVersionList(BaseModel):
     versions: List[DocumentVersionRead]
+
+
+# Chat schemas
+class ChatMessage(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+
+
+class ChatRequest(BaseModel):
+    message: str
+    client_id: str
+    document_id: Optional[int] = None
+    conversation_history: Optional[List[ChatMessage]] = None
+    document_context: Optional[str] = None
+    analysis_results: Optional[dict] = None  # AI analysis results (issues, scores, etc.)
+
+
+class ChatSource(BaseModel):
+    id: int
+    citation: str
+    content: str
+    tier: str
+
+
+class ChatResponse(BaseModel):
+    response: str
+    sources: List[ChatSource]
+    metadata: dict
+
+
+# Learning & Feedback schemas
+class SuggestionFeedbackRequest(BaseModel):
+    client_id: str
+    suggestion_id: str
+    action: str  # "accepted", "rejected", "modified"
+    suggested_text: str
+    actual_text: Optional[str] = None
+    context_before: Optional[str] = None
+    context_after: Optional[str] = None
+
+
+class LearnSessionRequest(BaseModel):
+    client_id: str
+    document_text: str
+    document_id: Optional[str] = None

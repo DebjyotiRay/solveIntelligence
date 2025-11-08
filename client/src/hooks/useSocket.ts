@@ -15,7 +15,7 @@ interface UseWebSocketReturn {
   isAnalyzing: boolean;
   currentPhase?: string;
   streamUpdates: StreamUpdate[];
-  requestInlineSuggestion: (content: string, cursorPos: number, contextBefore: string, contextAfter: string, triggerType?: string, type?: 'completion' | 'improvement' | 'correction') => void;
+  requestInlineSuggestion: (content: string, cursorPos: number, contextBefore: string, contextAfter: string, triggerType?: string, documentId?: number | string) => void;
   pendingSuggestion: InlineSuggestionResponse | null;
   acceptInlineSuggestion: (suggestion: InlineSuggestionResponse) => void;
   rejectInlineSuggestion: () => void;
@@ -145,12 +145,21 @@ export const useSocket = (): UseWebSocketReturn => {
             suggested_text: suggestion.suggested_text,
             suggested_text_length: suggestion.suggested_text?.length || 0,
             confidence: suggestion.confidence,
-            reasoning: suggestion.reasoning
+            reasoning: suggestion.reasoning,
+            // 🚀 NEW: Log grounding flags for debugging
+            legal_grounded: suggestion.legal_grounded,
+            firm_grounded: suggestion.firm_grounded,
+            client_grounded: suggestion.client_grounded
           });
-          
+
           // Only set suggestion if it has actual text
           if (suggestion.suggested_text && suggestion.suggested_text.trim().length > 0) {
             console.log('✅ Setting pending suggestion with text:', suggestion.suggested_text);
+            console.log('🎯 Grounding flags:', {
+              legal: suggestion.legal_grounded,
+              firm: suggestion.firm_grounded,
+              client: suggestion.client_grounded
+            });
             setPendingSuggestion(suggestion);
           } else {
             console.warn('⚠️ Received empty suggestion, not setting pendingSuggestion');
@@ -215,14 +224,17 @@ export const useSocket = (): UseWebSocketReturn => {
       return;
     }
 
-    console.log('Requesting AI suggestions via WebSocket');
+    console.log('🚀 Requesting AI suggestions via WebSocket');
+    console.log('🚀 Content length being sent:', content.length);
+    console.log('🚀 Content preview:', content.substring(0, 200));
     setIsAnalyzing(true);
     setAnalysisResult(null); // Clear previous results
     setStreamUpdates([]); // Clear previous stream updates
     setCurrentPhase(undefined); // Clear previous phase
-    
+
     // Send HTML content to WebSocket for AI processing
     wsRef.current.send(content);
+    console.log('✅ Content sent to WebSocket');
   };
 
   const requestInlineSuggestion = (
@@ -231,14 +243,14 @@ export const useSocket = (): UseWebSocketReturn => {
     contextBefore: string,
     contextAfter: string,
     triggerType?: string,
-    type: 'completion' | 'improvement' | 'correction' = 'completion'
+    documentId?: number | string
   ) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       console.warn('WebSocket not connected for inline suggestions');
       return;
     }
 
-    console.log('💡 Requesting inline AI suggestion...');
+    console.log('💡 Requesting inline AI suggestion...', { documentId });
 
     wsRef.current.send(JSON.stringify({
       type: 'inline_suggestion',
@@ -246,8 +258,10 @@ export const useSocket = (): UseWebSocketReturn => {
       cursor_position: cursorPos,
       context_before: contextBefore,
       context_after: contextAfter,
-      suggestion_type: type,
-      trigger_type: triggerType
+      suggestion_type: 'completion',
+      trigger_type: triggerType,
+      document_id: documentId,  // 🚀 NEW: Pass documentId for client memory
+      client_id: documentId ? `client_${documentId}` : 'default_client'  // 🚀 NEW: Derive client_id from documentId
     }));
   };
 

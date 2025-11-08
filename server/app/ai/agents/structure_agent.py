@@ -286,12 +286,53 @@ IMPORTANT:
                     logger.warning(f"Invalid severity '{severity}', defaulting to 'medium'")
                     severity = 'medium'
                 
+                # Handle suggestion - can be string or dict
+                suggestion_raw = issue.get('suggestion', '')
+                if isinstance(suggestion_raw, dict):
+                    # AI returned a dict instead of string - extract the actual text
+                    logger.warning(f"AI returned dict for suggestion, extracting text: {suggestion_raw}")
+                    
+                    # Try multiple extraction strategies
+                    suggestion = None
+                    
+                    # Strategy 1: Look for 'text' key
+                    if 'text' in suggestion_raw:
+                        suggestion = str(suggestion_raw['text'])
+                    
+                    # Strategy 2: Look for nested 'replacement' object
+                    elif 'replacement' in suggestion_raw:
+                        replacement = suggestion_raw['replacement']
+                        if isinstance(replacement, dict) and 'text' in replacement:
+                            suggestion = str(replacement['text'])
+                        else:
+                            suggestion = str(replacement)
+                    
+                    # Strategy 3: Look for any reasonable text field
+                    elif 'content' in suggestion_raw:
+                        suggestion = str(suggestion_raw['content'])
+                    elif 'value' in suggestion_raw:
+                        suggestion = str(suggestion_raw['value'])
+                    
+                    # Last resort: try to extract the first string value from the dict
+                    if suggestion is None:
+                        for key, value in suggestion_raw.items():
+                            if isinstance(value, str) and len(value) > 10:
+                                suggestion = value
+                                break
+                    
+                    # Absolute last resort: inform user to check the raw data
+                    if suggestion is None:
+                        suggestion = "Please review the suggestion details in the analysis output"
+                        logger.error(f"Could not extract text from suggestion dict: {suggestion_raw}")
+                else:
+                    suggestion = str(suggestion_raw)
+                
                 issues.append(StructuralIssue(
                     type=issue_type,
                     severity=severity,
                     description=issue.get('description', ''),
                     location=issue.get('target', {}).get('section') if 'target' in issue else None,
-                    suggestion=issue.get('suggestion', '')
+                    suggestion=suggestion
                 ))
             
             typed_result = StructureAnalysisResult(

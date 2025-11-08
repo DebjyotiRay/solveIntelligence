@@ -261,13 +261,31 @@ IMPORTANT:
                 if "replacement" in issue_data and issue_data["replacement"]:
                     replacement = ReplacementText(**issue_data["replacement"])
                 
+                # Handle paragraph - must be int or None
+                paragraph_raw = issue_data.get("paragraph")
+                paragraph = None
+                if paragraph_raw is not None:
+                    if isinstance(paragraph_raw, int):
+                        paragraph = paragraph_raw
+                    elif isinstance(paragraph_raw, str):
+                        # Try to extract number from string
+                        if paragraph_raw.isdigit():
+                            paragraph = int(paragraph_raw)
+                        else:
+                            # AI returned section name instead of paragraph number
+                            logger.warning(f"AI returned string for paragraph: '{paragraph_raw}', setting to None")
+                            paragraph = None
+                    else:
+                        logger.warning(f"Unexpected paragraph type: {type(paragraph_raw)}, setting to None")
+                        paragraph = None
+                
                 issue = LegalIssue(
                     type=issue_data.get("type", "legal_compliance"),
                     severity=issue_data.get("severity", "medium"),
                     description=issue_data.get("description", ""),
                     suggestion=issue_data.get("suggestion", ""),
                     legal_basis=issue_data.get("legal_basis"),
-                    paragraph=issue_data.get("paragraph"),
+                    paragraph=paragraph,
                     target=target,
                     replacement=replacement
                 )

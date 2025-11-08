@@ -30,6 +30,10 @@ export interface InlineSuggestionResponse {
   confidence: number;
   reasoning: string;
   type: 'completion' | 'improvement' | 'correction';
+  // 🚀 NEW: 3-tier memory grounding flags
+  legal_grounded?: boolean;   // Level 1: Legal knowledge (1634 Indian laws)
+  firm_grounded?: boolean;     // Level 2: Firm knowledge (successful patents, style)
+  client_grounded?: boolean;   // Level 3: Client history (personalized learning)
 }
 
 export interface PanelSuggestion {

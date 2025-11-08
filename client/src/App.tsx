@@ -4,6 +4,7 @@ import Document from "./Document";
 import LoadingOverlay from "./internal/LoadingOverlay";
 import Logo from "./assets/logo.png";
 import SuggestionsPanel from "./components/SuggestionsPanel";
+import { ChatPanel } from "./components/ChatPanel";
 import { useSocket } from "./hooks/useSocket";
 import { PatentIssue, PanelSuggestion } from "./types/PatentTypes";
 
@@ -174,12 +175,19 @@ function App() {
 
   // Handle content changes (mark as dirty)
   const handleContentChange = (content: string) => {
+    console.log('📝 Content changed, new length:', content.length);
+    console.log('📝 Content preview:', content.substring(0, 200));
     setCurrentDocumentContent(content);
     setIsDirty(true);
   };
 
   // Handle AI suggestion requests from Document component
   const handleRequestSuggestions = (content: string) => {
+    console.log('🔍 Analysis requested with content length:', content.length);
+    console.log('🔍 Content preview:', content.substring(0, 200));
+    console.log('🔍 Current state content length:', currentDocumentContent.length);
+    console.log('🔍 Are they the same?', content === currentDocumentContent);
+
     if (isConnected) {
       requestAISuggestions(content);
     }
@@ -385,6 +393,14 @@ function App() {
           </div>
         </div>
       </div>
+
+      {/* Grounded Chatbot - Floating */}
+      <ChatPanel
+        documentId={currentDocumentId}
+        clientId={`client_${currentDocumentId}`}
+        documentContent={currentDocumentContent}
+        analysisResult={analysisResult}
+      />
     </div>
   );
 }
