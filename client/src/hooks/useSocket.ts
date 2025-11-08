@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { flushSync } from 'react-dom';
 import { AnalysisResult, InlineSuggestionResponse, StreamUpdate } from '../types/PatentTypes';
 
 export function useSocket() {
-  const [isConnected] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [currentPhase, setCurrentPhase] = useState<string>('');

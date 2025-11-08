@@ -1,3 +1,11 @@
+import React, { useState, useEffect } from 'react';
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import * as Y from 'yjs';
+import { HocuspocusProvider } from '@hocuspocus/provider';
+import Collaboration from '@tiptap/extension-collaboration';
+import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
+import { InlineSuggestions } from '../extensions/InlineSuggestions';
 import { Textarea } from '../components/ui';
 import { InlineSuggestionResponse, PanelSuggestion } from '../types/PatentTypes';
 
@@ -22,7 +30,16 @@ interface EditorProps {
 
 export default function Editor({ 
   handleEditorChange, 
-  content 
+  content,
+  documentId,
+  versionNumber,
+  onInlineSuggestionRequest,
+  pendingSuggestion,
+  onAcceptSuggestion,
+  onRejectSuggestion,
+  activePanelSuggestion,
+  onDismissPanelSuggestion,
+  onOnlineUsersChange
 }: EditorProps) {
   const [cursorPosition, setCursorPosition] = useState<{x: number, y: number} | null>(null);
   const [ydoc] = useState(() => new Y.Doc());
@@ -79,23 +96,17 @@ export default function Editor({
   // Highlight and scroll to the issue location when panel suggestion is active
   useEffect(() => {
     if (editor && activePanelSuggestion) {
-      const editorTextContent = editor.state.doc.textContent;
-      const targetText = activePanelSuggestion.issue.target?.text;
+      const location = activePanelSuggestion.issue.location;
 
-      if (targetText) {
-        // Simple text search
-        const pos = editorTextContent.indexOf(targetText);
-
-        if (pos !== -1) {
-          // Select/highlight the text
-          editor.chain()
-            .focus()
-            .setTextSelection({ 
-              from: pos, 
-              to: pos + targetText.length 
-            })
-            .run();
-        }
+      if (location) {
+        // Use the location start/end positions
+        editor.chain()
+          .focus()
+          .setTextSelection({ 
+            from: location.start, 
+            to: location.end 
+          })
+          .run();
       }
     }
   }, [editor, activePanelSuggestion]);
@@ -324,7 +335,7 @@ export default function Editor({
                 {activePanelSuggestion.issue.severity.toUpperCase()}
               </span>
               <span className="text-xs text-gray-600 capitalize">
-                {activePanelSuggestion.issue.type}
+                {activePanelSuggestion.issue.issue_type}
               </span>
             </div>
             <p className="text-sm text-gray-700 mb-2">{activePanelSuggestion.issue.description}</p>
