@@ -330,10 +330,28 @@ export default function Dashboard({ backendUrl, onLogout, onOpenDocument }: Dash
                     {myProjects.map(p => (
                       <li 
                         key={p.id} 
-                        className="p-4 rounded-xl border border-border bg-card/50 hover:bg-card/80 transition-colors"
+                        className="p-4 rounded-xl border border-border bg-card/50 hover:bg-card/80 transition-colors group cursor-pointer"
+                        onClick={() => p.document_id && onOpenDocument(p.document_id)}
                       >
-                        <div className="font-medium text-foreground">{p.name}</div>
-                        <div className="text-xs text-muted-foreground mt-1">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="font-medium text-foreground group-hover:text-primary transition-colors">
+                            {p.name}
+                          </div>
+                          {p.document_id && (
+                            <Button 
+                              variant="primary" 
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenDocument(p.document_id!);
+                              }}
+                            >
+                              <FileText className="w-3 h-3 mr-1" />
+                              Open
+                            </Button>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
                           Project #<span className="font-mono">{p.id}</span> · 
                           Owner #<span className="font-mono">{p.owner_id}</span> · 
                           Document #<span className="font-mono">{p.document_id ?? 'none'}</span>
