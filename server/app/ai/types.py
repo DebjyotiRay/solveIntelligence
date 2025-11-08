@@ -7,6 +7,20 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
+# Shared Types for both agents
+class TargetLocation(BaseModel):
+    """Location information for text replacement"""
+    text: Optional[str] = None
+    section: Optional[str] = None
+    position: Optional[Literal["before", "after", "replace"]] = None
+
+
+class ReplacementText(BaseModel):
+    """Replacement text specification"""
+    type: Literal["add", "replace", "insert"]
+    text: str
+
+
 # Structure Agent Types
 class DocumentSection(BaseModel):
     """A section within a patent document"""
@@ -31,6 +45,9 @@ class StructuralIssue(BaseModel):
     description: str
     location: Optional[str] = None
     suggestion: str
+    paragraph: Optional[int] = None
+    target: Optional[TargetLocation] = None
+    replacement: Optional[ReplacementText] = None
 
 
 class StructureAnalysisResult(BaseModel):
@@ -44,17 +61,6 @@ class StructureAnalysisResult(BaseModel):
 
 
 # Legal Agent Types
-class TargetLocation(BaseModel):
-    """Location information for text replacement"""
-    text: Optional[str] = None
-    section: Optional[str] = None
-    position: Optional[Literal["before", "after", "replace"]] = None
-
-
-class ReplacementText(BaseModel):
-    """Replacement text specification"""
-    type: Literal["add", "replace", "insert"]
-    text: str
 
 
 class LegalIssue(BaseModel):

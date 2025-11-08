@@ -6,8 +6,9 @@ import Logo from "./assets/logo.png";
 import SuggestionsPanel from "./components/SuggestionsPanel";
 import { useSocket } from "./hooks/useSocket";
 import { PatentIssue, PanelSuggestion } from "./types/PatentTypes";
+import config from "./config";
 
-const BACKEND_URL = "http://localhost:8000";
+const BACKEND_URL = config.BACKEND_URL;
 
 interface DocumentVersion {
   id: number;

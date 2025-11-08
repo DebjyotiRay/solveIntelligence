@@ -64,12 +64,22 @@ class PatentAnalysisCoordinator:
         state: PatentAnalysisState,
         stream_callback: Optional[callable] = None
     ) -> PatentAnalysisState:
-        """Execute 3-phase workflow: Structure → Parallel → Synthesis."""
+        """Execute sequential workflow: Structure → Legal → Synthesis.
+        
+        Each agent receives the state with previous agents' results,
+        making it simple and transparent with clear data flow.
+        """
         
         try:
+            # Phase 1: Structure Analysis
             state = await self._phase1_structure_analysis(state, stream_callback)
-            state = await self._phase2_parallel_analysis(state, stream_callback)
-            state = await self._phase4_synthesis(state, stream_callback)
+            
+            # Phase 2: Legal Analysis (receives structure results in state)
+            state = await self._phase2_legal_analysis(state, stream_callback)
+            
+            # Phase 3: Synthesis
+            state = await self._phase3_synthesis(state, stream_callback)
+            
             return state
             
         except Exception as e:
@@ -121,45 +131,40 @@ class PatentAnalysisCoordinator:
         
         return state
 
-    async def _phase2_parallel_analysis(
+    async def _phase2_legal_analysis(
         self,
         state: PatentAnalysisState,
         stream_callback: Optional[callable] = None
     ) -> PatentAnalysisState:
-        """Phase 2: Parallel analysis (legal + future agents)."""
+        """Phase 2: Legal analysis (receives structure results from state).
+        
+        The legal agent can access structure_analysis from the state,
+        which includes parsed_document, issues, and confidence scores.
+        """
 
-        state = update_phase(state, PhaseStatus.PARALLEL_ANALYSIS, "Running parallel analysis...")
+        state = update_phase(state, PhaseStatus.PARALLEL_ANALYSIS, "Running legal analysis...")
 
         if stream_callback:
             await stream_callback({
                 "status": "analyzing",
-                "phase": "parallel_analysis",
-                "message": "Running legal compliance analysis..."
+                "phase": "legal_analysis",
+                "message": "⚖️ Analyzing legal compliance with structure context..."
             })
 
-        # Run agents in parallel (currently just legal)
-        # To add more: results = await asyncio.gather(legal_task, prior_art_task, quality_task)
-        results = await asyncio.gather(
-            self.legal_agent.analyze_with_memory(state, stream_callback),
-            return_exceptions=True
-        )
-
-        # Check for exceptions
-        if isinstance(results[0], Exception):
-            raise results[0]
-
-        state = results[0]
+        # Legal agent receives state with structure_analysis already populated
+        # It can access: state.get("structure_analysis", {})
+        state = await self.legal_agent.analyze_with_memory(state, stream_callback)
 
         if stream_callback:
             await stream_callback({
                 "status": "complete",
-                "phase": "parallel_analysis",
-                "summary": f"Found {len(state.get('legal_analysis', {}).get('issues', []))} issues"
+                "phase": "legal_analysis",
+                "summary": f"Found {len(state.get('legal_analysis', {}).get('issues', []))} legal issues"
             })
 
         return state
 
-    async def _phase4_synthesis(
+    async def _phase3_synthesis(
         self, 
         state: PatentAnalysisState,
         stream_callback: Optional[callable] = None
@@ -200,10 +205,30 @@ class PatentAnalysisCoordinator:
         structure_analysis = state.get("structure_analysis", {})
         legal_analysis = state.get("legal_analysis", {})
         
-        # Collect all issues
+        # Collect all issues (convert Pydantic models to dicts)
         all_issues = []
-        all_issues.extend(structure_analysis.get('issues', []))
-        all_issues.extend(legal_analysis.get('issues', []))
+        
+        # Structure issues
+        structure_issues = structure_analysis.get('issues', [])
+        for issue in structure_issues:
+            # Handle both Pydantic models and dicts
+            if hasattr(issue, 'model_dump'):
+                all_issues.append(issue.model_dump())
+            elif hasattr(issue, 'dict'):
+                all_issues.append(issue.dict())
+            else:
+                all_issues.append(issue)
+        
+        # Legal issues
+        legal_issues = legal_analysis.get('issues', [])
+        for issue in legal_issues:
+            # Handle both Pydantic models and dicts
+            if hasattr(issue, 'model_dump'):
+                all_issues.append(issue.model_dump())
+            elif hasattr(issue, 'dict'):
+                all_issues.append(issue.dict())
+            else:
+                all_issues.append(issue)
         
         # Collect recommendations
         recommendations = []
@@ -215,7 +240,7 @@ class PatentAnalysisCoordinator:
         legal_confidence = legal_analysis.get('confidence', 0.0)
         overall_score = (structure_confidence + legal_confidence) / 2.0
         
-        # Determine status
+        # Determine status (now working with dicts)
         status = "complete"
         if len(all_issues) > 0:
             high_severity_issues = [issue for issue in all_issues if issue.get('severity') == 'high']

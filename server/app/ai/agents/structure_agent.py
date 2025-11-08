@@ -4,11 +4,13 @@ import os
 import json
 import logging
 from typing import Dict, Any, List
+from datetime import datetime
 
 from .base_agent import BasePatentAgent
 from ..workflow.patent_state import PatentAnalysisState
 from ..utils import strip_html
-from ..types import StructureAnalysisResult, StructuralIssue
+from ..types import StructureAnalysisResult, StructuralIssue, TargetLocation, ReplacementText
+from app.services.memory_service import get_memory_service
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +19,7 @@ class DocumentStructureAgent(BasePatentAgent):
     
     def __init__(self):
         super().__init__("structure")
+        self.memory = get_memory_service()  # 🚀 MEMORY INTEGRATION
 
     async def analyze(self, state: PatentAnalysisState, stream_callback=None) -> Dict[str, Any]:
         logger.info("STRUCTURE AGENT: Starting AI-powered analysis")
@@ -38,15 +41,51 @@ class DocumentStructureAgent(BasePatentAgent):
         parsed_document = self._parse_document_sections(clean_text)
         logger.info(f"STRUCTURE AGENT: Parsed document - {len(parsed_document.get('claims', []))} claims found")
         
+        # 🚀 MEMORY: Query legal knowledge for patent structure requirements
+        structure_requirements = self.memory.query_legal_knowledge(
+            query="patent structure requirements sections format claims abstract description",
+            limit=3
+        )
+        logger.info(f"STRUCTURE AGENT: Retrieved {len(structure_requirements)} structure requirements from legal knowledge")
+        
+        # 🧠 LEARNING LOOP: Query client's past structure issues
+        client_id = state.get("client_id", state.get("document_id", "default"))
+        historical_context = ""
+        try:
+            past_analyses = self.memory.query_client_memory(
+                client_id=client_id,
+                query="structure analysis formatting issues claims sections",
+                memory_type="analysis",
+                limit=2
+            )
+            
+            if past_analyses:
+                logger.info(f"STRUCTURE AGENT: Found {len(past_analyses)} past structure analyses for client {client_id}")
+                historical_context = "\n\nCLIENT'S HISTORICAL STRUCTURE PATTERNS:\n"
+                for i, analysis in enumerate(past_analyses, 1):
+                    memory_text = analysis.get('memory', '')
+                    historical_context += f"{i}. {memory_text[:150]}\n"
+                historical_context += "\nPay attention to this client's recurring structure issues.\n"
+            else:
+                logger.info(f"STRUCTURE AGENT: No history for client {client_id} (first analysis)")
+        except Exception as e:
+            logger.warning(f"Could not retrieve client history: {e}")
+            historical_context = ""
+        
         if stream_callback:
             await stream_callback({
                 "status": "analyzing",
                 "phase": "structure_analysis",
                 "agent": "structure",
-                "message": "🤖 Sending to AI for validation..."
+                "message": "🤖 Sending to AI for validation with legal context..."
             })
         
-        ai_validation = await self._ai_validate_document(parsed_document, stream_callback)
+        ai_validation = await self._ai_validate_document(
+            parsed_document, 
+            structure_requirements,
+            historical_context,
+            stream_callback
+        )
         
         findings = {
             "type": "structure_analysis",
@@ -57,6 +96,27 @@ class DocumentStructureAgent(BasePatentAgent):
         }
         
         logger.info(f"STRUCTURE AGENT: Analysis complete - {len(findings['issues'])} issues found")
+        
+        # 🚀 MEMORY: Store structure analysis in client memory for learning
+        try:
+            client_id = state.get("client_id", state.get("document_id", "default"))
+            self.memory.store_client_analysis(
+                client_id=client_id,
+                analysis_summary=f"Structure analysis found {len(ai_validation.issues)} issues. "
+                               f"Confidence: {ai_validation.confidence:.2f}. "
+                               f"Issues: {', '.join([issue.type for issue in ai_validation.issues[:3]])}",
+                metadata={
+                    "document_id": state.get("document_id", "unknown"),
+                    "analysis_type": "structure",
+                    "issues_found": len(ai_validation.issues),
+                    "confidence": ai_validation.confidence,
+                    "timestamp": datetime.now().isoformat()
+                }
+            )
+            logger.info(f"✓ Stored structure analysis in client memory for {client_id}")
+        except Exception as e:
+            logger.warning(f"Failed to store in client memory: {e}")
+        
         return findings
 
     def _parse_document_sections(self, content: str) -> Dict[str, Any]:
@@ -136,7 +196,39 @@ class DocumentStructureAgent(BasePatentAgent):
         figure_refs = re.findall(r'(?:FIG\.?\s*\d+|Figure\s*\d+)', content, re.IGNORECASE)
         return list(set(figure_refs))
 
-    async def _ai_validate_document(self, parsed_doc: Dict[str, Any], stream_callback=None) -> StructureAnalysisResult:
+
+    def _is_valid_replacement(self, target: str, replacement: str) -> bool:
+        """Validate replacement is meaningful and not nonsense."""
+        if not target or not replacement:
+            return False
+        
+        target_clean = target.strip().lower()
+        replacement_clean = replacement.strip().lower()
+        
+        # Reject identical
+        if target_clean == replacement_clean:
+            return False
+        
+        # Reject duplicates
+        if replacement_clean == target_clean + " " + target_clean:
+            return False
+        
+        # Reject if target appears multiple times in replacement
+        if replacement_clean.count(target_clean) > 1:
+            return False
+        
+        # Reject too short
+        if len(replacement.strip()) < 2:
+            return False
+        
+        return True
+    async def _ai_validate_document(
+        self, 
+        parsed_doc: Dict[str, Any],
+        legal_requirements: List[Dict[str, Any]],
+        historical_context: str,
+        stream_callback=None
+    ) -> StructureAnalysisResult:
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             logger.warning("No OpenAI API key - skipping AI validation")
@@ -155,6 +247,11 @@ class DocumentStructureAgent(BasePatentAgent):
                 for c in parsed_doc.get('claims', [])[:5]
             ])
             
+            # Format legal requirements for context
+            legal_context = "\n\nLEGAL STRUCTURE REQUIREMENTS:\n"
+            for i, req in enumerate(legal_requirements, 1):
+                legal_context += f"{i}. {req.get('memory', '')[:200]}\n"
+            
             document_summary = f"""
 Title: {parsed_doc.get('title', 'Not found')}
 Abstract: {parsed_doc.get('abstract', 'Not found')[:500]}
@@ -162,63 +259,64 @@ Claims ({len(parsed_doc.get('claims', []))} total):
 {claims_text}
 
 Full text preview: {parsed_doc.get('full_text', '')[:1000]}
+{legal_context}{historical_context}
 """
 
-            prompt = f"""Analyze this patent document for issues:
+            prompt = f"""You are a precision document auditor for patent formatting.
+Identify **only mechanical, verifiable issues** with exact text replacements.
 
+PATENT DOCUMENT:
 {document_summary}
 
-Find and report:
-1. Missing or incomplete required sections (title, abstract, claims)
-2. Claims formatting issues (numbering, punctuation, structure)
-3. Vague or indefinite language (e.g., "substantially", "about", "effective")
-4. Antecedent basis problems (elements introduced with "a/an" must be referenced with "the")
-5. Dependency issues in claims
-6. Grammar, spelling, or clarity issues - MUST include exact misspelled word and its correction
-7. Any other structural or formatting problems
+---
 
-For EACH issue, YOU MUST provide:
-- Exact location (paragraph number if applicable, or section name)
-- Specific text to find - THE ACTUAL WORDS that need changing (minimum 10-30 characters)
-- Complete replacement text in proper format
-- For spelling/grammar: Include the misspelled word in target.text and corrected word in replacement.text
+ANALYZE FOR:
+1. Missing sections (Title, Abstract, Claims)
+2. Claim formatting (numbering, structure)
+3. Spelling errors (exact word + correction)
+4. Punctuation errors (missing/incorrect)
 
-CRITICAL FOR SPELLING/GRAMMAR: 
-- target.text MUST contain the EXACT misspelled or incorrect word/phrase (e.g., "recieve" not just "spelling error")
-- replacement.text MUST contain the EXACT corrected spelling (e.g., "receive")
-- Do NOT report generic "check spelling" - report "Change 'recieve' to 'receive' in paragraph 3"
-
-Respond ONLY with valid JSON in this EXACT format:
+OUTPUT FORMAT (JSON only):
 {{
   "confidence": 0.85,
   "issues": [
     {{
-      "type": "clarity_issue",
+      "type": "format_error",
       "severity": "medium",
-      "description": "Vague term 'substantially' used without definition",
-      "suggestion": "Define 'substantially' or use specific measurements"
-    }},
-    {{
-      "type": "claim_issue",
-      "severity": "high",
-      "description": "Claim 1 missing proper antecedent basis for 'the device'",
-      "suggestion": "First introduce 'a device' then refer to 'the device'"
+      "description": "Missing period",
+      "suggestion": "Add period",
+      "paragraph": 2,
+      "target": {{"text": "lightweight", "section": "Claims"}},
+      "replacement": {{"type": "replace", "text": "lightweight."}}
     }}
   ],
-  "recommendations": ["Add definitions section", "Review claim dependencies"]
+  "recommendations": []
 }}
 
-CRITICAL: 
-- type MUST be EXACTLY one of: "missing_section", "format_error", "clarity_issue", or "claim_issue"
-- severity MUST be EXACTLY one of: "high", "medium", or "low"
-- Do NOT use any other values for these fields
+---
 
-IMPORTANT: 
-- For missing sections, provide the complete section template in replacement.text
-- For punctuation fixes, provide the exact punctuation mark in replacement.text
-- For antecedent basis, provide the corrected phrase in replacement.text
-- Always include target.text when replacing existing content
-- Use target.section to specify where in the document structure this applies"""
+REPLACEMENT RULES:
+
+✓ CORRECT Examples:
+  • Spelling: target="recieve" → replacement="receive"
+  • Punctuation: target="device" → replacement="device."
+  • Completion: target="electromagnetic and" → replacement="electromagnetic radiation and"
+
+✗ FORBIDDEN (skip these issues entirely):
+  • Duplication: target="lightweight" → replacement="lightweight lightweight" ❌
+  • Duplication: target="is transparent" → replacement="is transparent is transparent" ❌
+  • Adding context: target="device" → replacement="the device is capable" ❌
+  • Meaning change: target="infrared" → replacement="infrared and ultraviolet" ❌
+
+VALIDATION CHECK (before returning each issue):
+- Does replacement contain target text MORE THAN ONCE? → DELETE this issue
+- Does replacement add unrelated words? → DELETE this issue
+- Is it a mechanical fix (spelling/punctuation only)? → KEEP this issue
+
+Valid types: "missing_section", "format_error", "clarity_issue", "claim_issue"
+Valid severities: "high", "medium", "low"
+
+Return JSON only. If no valid issues found: {{"confidence": 1.0, "issues": [], "recommendations": []}}"""
 
             if stream_callback:
                 await stream_callback({
@@ -262,12 +360,50 @@ IMPORTANT:
                     logger.warning(f"Invalid severity '{severity}', defaulting to 'medium'")
                     severity = 'medium'
                 
+                # Handle suggestion - must be a string
+                suggestion_value = issue.get('suggestion', '')
+                if isinstance(suggestion_value, dict):
+                    # AI returned a structured suggestion - convert to string
+                    if 'replacement' in suggestion_value and 'text' in suggestion_value['replacement']:
+                        suggestion_value = suggestion_value['replacement']['text']
+                    else:
+                        suggestion_value = str(suggestion_value)
+                    logger.warning(f"AI returned dict for suggestion, converted to: {suggestion_value[:100]}")
+                elif not isinstance(suggestion_value, str):
+                    suggestion_value = str(suggestion_value)
+                
+                # Extract target and replacement data for "Insert Fix" button
+                target = None
+                if 'target' in issue and issue['target']:
+                    target = TargetLocation(
+                        text=issue['target'].get('text'),
+                        section=issue['target'].get('section'),
+                        position=issue['target'].get('position')
+                    )
+                
+                replacement = None
+                if 'replacement' in issue and issue['replacement']:
+                    replacement_text = issue['replacement'].get('text', suggestion_value)
+                    target_text = issue['target'].get('text') if target else None
+
+                    # Validate replacement is meaningful
+                    if target_text and self._is_valid_replacement(target_text, replacement_text):
+                        replacement = ReplacementText(
+                            type=issue['replacement'].get('type', 'replace'),
+                            text=replacement_text
+                        )
+                    else:
+                        logger.warning(f"Rejected nonsense replacement: '{target_text}' -> '{replacement_text}'")
+                
                 issues.append(StructuralIssue(
                     type=issue_type,
                     severity=severity,
                     description=issue.get('description', ''),
                     location=issue.get('target', {}).get('section') if 'target' in issue else None,
-                    suggestion=issue.get('suggestion', '')
+                    suggestion=suggestion_value,
+                    paragraph=issue.get('paragraph'),
+                    target=target,
+                    replacement=replacement
                 ))
             
             typed_result = StructureAnalysisResult(

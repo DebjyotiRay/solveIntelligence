@@ -23,14 +23,18 @@ class LegalComplianceAgent(BasePatentAgent):
 
     def __init__(self):
         super().__init__("legal")
-        self.memory = get_memory_service()  # 🚀 MEMORY INTEGRATION
+        self.memory = get_memory_service() 
 
     async def analyze(self, state: PatentAnalysisState, stream_callback=None) -> LegalAnalysisResult:
         """
         Analyze legal compliance and regulatory requirements with memory-enhanced learning.
-
+        
+        This agent receives the complete state from previous agents, including:
+        - structure_analysis: Document parsing results from StructureAgent
+        - document: Original document content
+        
         Args:
-            state: Current workflow state
+            state: Current workflow state with previous agent results
             stream_callback: Optional callback for streaming progress updates
 
         Returns:
@@ -39,17 +43,22 @@ class LegalComplianceAgent(BasePatentAgent):
 
         logger.info("LEGAL AGENT: Starting analysis")
         
+        # Extract structure analysis results from state (shared from previous agent)
+        structure_analysis = state.get("structure_analysis", {})
+        parsed_document = structure_analysis.get("parsed_document", {})
+        structure_issues = structure_analysis.get("issues", [])
+        structure_confidence = structure_analysis.get("confidence", 0.0)
+        
+        logger.info(f"LEGAL AGENT: Received structure analysis with {len(parsed_document.get('claims', []))} claims, "
+                   f"{len(structure_issues)} structure issues, confidence: {structure_confidence:.2f}")
+        
         if stream_callback:
             await stream_callback({
                 "status": "analyzing",
-                "phase": "parallel_analysis",
+                "phase": "legal_analysis",
                 "agent": "legal",
-                "message": "⚖️ Starting legal compliance analysis..."
+                "message": f"⚖️ Starting legal analysis (building on {len(structure_issues)} structure findings)..."
             })
-
-        structure_analysis = state.get("structure_analysis", {})
-        parsed_document = structure_analysis.get("parsed_document", {})
-        logger.info(f"LEGAL AGENT: Received document with {len(parsed_document.get('claims', []))} claims")
 
         # 🚀 MEMORY: Query local legal knowledge instead of web search (10x faster!)
         regulatory_results = self.memory.query_legal_knowledge(

@@ -102,25 +102,52 @@ export default function Editor({
     },
   }, []);
 
+  // Helper function to find text position in ProseMirror document
+  const findTextInDoc = (searchText: string): { from: number; to: number } | null => {
+    if (!editor) return null;
+
+    let found: { from: number; to: number } | null = null;
+    const doc = editor.state.doc;
+
+    doc.descendants((node, pos) => {
+      if (found) return false; // Already found, stop searching
+
+      if (node.isText && node.text) {
+        const index = node.text.indexOf(searchText);
+        if (index !== -1) {
+          found = {
+            from: pos + index + 1, // +1 because pos is before the text node
+            to: pos + index + searchText.length + 1
+          };
+          return false; // Stop searching
+        }
+      }
+    });
+
+    return found;
+  };
+
   // Highlight and scroll to the issue location when panel suggestion is active
   useEffect(() => {
     if (editor && activePanelSuggestion) {
-      const editorTextContent = editor.state.doc.textContent;
       const targetText = activePanelSuggestion.issue.target?.text;
 
       if (targetText) {
-        // Simple text search
-        const pos = editorTextContent.indexOf(targetText);
+        const position = findTextInDoc(targetText);
 
-        if (pos !== -1) {
+        if (position) {
           // Select/highlight the text
           editor.chain()
             .focus()
             .setTextSelection({
-              from: pos,
-              to: pos + targetText.length
+              from: position.from,
+              to: position.to
             })
             .run();
+
+          console.log('✅ Highlighted text at position:', position);
+        } else {
+          console.error('❌ Could not find target text to highlight:', targetText);
         }
       }
     }
@@ -133,25 +160,24 @@ export default function Editor({
     const targetText = issueToApply.target?.text;
     const replacementText = issueToApply.replacement.text;
     const replacementType = issueToApply.replacement.type;
-    const editorTextContent = editor.state.doc.textContent;
 
     try {
       if (replacementType === 'replace' && targetText) {
-        // Find and replace the target text
-        const pos = editorTextContent.indexOf(targetText);
+        // Find the target text in ProseMirror document
+        const position = findTextInDoc(targetText);
 
-        if (pos !== -1) {
+        if (position) {
           // Replace the text
           editor.chain()
             .focus()
             .setTextSelection({
-              from: pos,
-              to: pos + targetText.length
+              from: position.from,
+              to: position.to
             })
             .insertContent(replacementText)
             .run();
 
-          console.log('✅ Applied fix: replaced text at position', pos);
+          console.log('✅ Applied fix: replaced text at position', position);
           onFixApplied?.();
         } else {
           console.error('❌ Could not find target text to replace:', targetText);
@@ -159,19 +185,18 @@ export default function Editor({
           onFixApplied?.(); // Clear the state even on error
         }
       } else if (replacementType === 'insert' && targetText) {
-        // Insert replacement text after the target text
-        const pos = editorTextContent.indexOf(targetText);
+        // Find and insert replacement text after the target text
+        const position = findTextInDoc(targetText);
 
-        if (pos !== -1) {
+        if (position) {
           // Insert after the target text
-          const insertPos = pos + targetText.length;
           editor.chain()
             .focus()
-            .setTextSelection({ from: insertPos, to: insertPos })
+            .setTextSelection({ from: position.to, to: position.to })
             .insertContent(' ' + replacementText)
             .run();
 
-          console.log('✅ Applied fix: inserted text at position', insertPos);
+          console.log('✅ Applied fix: inserted text after position', position.to);
           onFixApplied?.();
         } else {
           console.error('❌ Could not find target text for insertion:', targetText);

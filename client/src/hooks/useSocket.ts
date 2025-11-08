@@ -5,6 +5,7 @@ import {
   StreamUpdate, 
   InlineSuggestionResponse 
 } from '../types/PatentTypes';
+import config from '../config';
 
 type WebSocketResponse = AnalysisResult | InlineSuggestionResponse;
 
@@ -35,8 +36,8 @@ export const useSocket = (): UseWebSocketReturn => {
     let reconnectTimeout: number | null = null;
     
     const connectWebSocket = () => {
-      console.log('🔌 Attempting WebSocket connection...');
-      const ws = new WebSocket('ws://localhost:8000/ws');
+      console.log('🔌 Attempting WebSocket connection to:', config.WS_URL);
+      const ws = new WebSocket(config.WS_URL);
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -207,7 +208,7 @@ export const useSocket = (): UseWebSocketReturn => {
 
   const requestAISuggestions = (content: string) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      console.warn('WebSocket not connected');
+      console.warn('❌ WebSocket not connected - readyState:', wsRef.current?.readyState);
       setAnalysisResult({
         status: 'error',
         error: 'Connection error. Please refresh the page.'
@@ -215,14 +216,27 @@ export const useSocket = (): UseWebSocketReturn => {
       return;
     }
 
-    console.log('Requesting AI suggestions via WebSocket');
+    console.log('🚀 Requesting AI suggestions via WebSocket');
+    console.log('📤 Sending content length:', content.length, 'chars');
+    console.log('📤 Content preview:', content.substring(0, 200));
+    
     setIsAnalyzing(true);
     setAnalysisResult(null); // Clear previous results
     setStreamUpdates([]); // Clear previous stream updates
     setCurrentPhase(undefined); // Clear previous phase
     
-    // Send HTML content to WebSocket for AI processing
-    wsRef.current.send(content);
+    try {
+      // Send HTML content to WebSocket for AI processing
+      wsRef.current.send(content);
+      console.log('✅ Message sent successfully');
+    } catch (error) {
+      console.error('❌ Failed to send WebSocket message:', error);
+      setIsAnalyzing(false);
+      setAnalysisResult({
+        status: 'error',
+        error: `Failed to send message: ${error}`
+      });
+    }
   };
 
   const requestInlineSuggestion = (
