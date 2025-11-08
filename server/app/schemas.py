@@ -3,6 +3,65 @@ from datetime import datetime
 from typing import List, Optional
 
 
+# Authentication schemas
+class UserCreate(BaseModel):
+    email: EmailStr
+    full_name: str
+    password: str
+
+
+class UserRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    email: EmailStr
+    full_name: str
+    is_active: bool
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+
+# Project schemas
+class ProjectCreate(BaseModel):
+    name: str
+    document_id: Optional[int] = None
+
+
+class ProjectRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    owner_id: int
+    document_id: Optional[int] = None
+
+
+class ProjectMemberRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_id: int
+    user_id: int
+    role: str
+    status: str
+
+
+class ProjectWithDocumentCreate(BaseModel):
+    name: str
+    content: str
+    document_title: Optional[str] = None
+    version_name: Optional[str] = None
+
+
+class DashboardDocument(BaseModel):
+    project_id: int
+    document_id: int
+    document_title: str
+
+
 class DocumentBase(BaseModel):
     title: str = "Untitled Patent"
 

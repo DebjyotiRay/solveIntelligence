@@ -92,7 +92,8 @@ class WebSocketService:
 
         while True:
             message = await websocket.receive_text()
-            print(f"Received message: {len(message)} chars")
+            print(f"📨 WEBSOCKET: Received message: {len(message)} chars")
+            print(f"📨 WEBSOCKET: Message preview: {message[:200]}")
 
             try:
                 parsed_message = json.loads(message)
@@ -104,6 +105,7 @@ class WebSocketService:
                 elif message_type == "analyze_patent":
                     document_html = parsed_message.get("content", "")
                     document_id = parsed_message.get("document_id")
+                    print(f"📄 WEBSOCKET: Analyzing patent - content length: {len(document_html)}")
                 else:
                     await websocket.send_text(json.dumps({
                         "status": "error",
@@ -113,9 +115,10 @@ class WebSocketService:
             except json.JSONDecodeError:
                 document_html = message
                 document_id = "1"
-                print("Received non-JSON format - treating as document content with default document_id=1")
+                print(f"📄 WEBSOCKET: Non-JSON format - content length: {len(document_html)}")
 
             ai_input = prepare_content_for_ai(document_html)
+            print(f"✅ WEBSOCKET: Prepared content for AI - clean_text length: {len(ai_input['clean_text'])}")
 
             if not ai_input["has_content"]:
                 await websocket.send_text(json.dumps({"error": "No content to analyze"}))

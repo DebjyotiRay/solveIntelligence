@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 import json
 import os
 
-from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import Body, Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import select
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -13,18 +13,15 @@ import app.models as models
 import app.schemas as schemas
 from app.services.database_service import DatabaseService
 from app.services.websocket_service import WebSocketService
-<<<<<<< HEAD
 from app.services.chat_service import get_chat_service
 from app.services.learning_service import get_learning_service
 from app.api_onboarding import router as onboarding_router
-=======
 from app.auth import (
     get_current_user,
     get_password_hash,
     verify_password,
     create_access_token,
 )
->>>>>>> eb7489f (Made auth page and dashboard)
 
 USE_MULTI_AGENT_SYSTEM = os.getenv("USE_MULTI_AGENT_SYSTEM", "false").lower() == "true"
 
@@ -109,9 +106,6 @@ def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_user)
     return db_user
-
-
-from fastapi import Body
 
 
 @fastapi_app.post("/auth/login_simple", response_model=schemas.Token)
@@ -215,9 +209,9 @@ def list_my_projects(db: Session = Depends(get_db), current_user: models.User = 
     project_ids |= {row.id for row in owned}
     if not project_ids:
         return []
-    projects = db.scalars(models.Project.__table__.select().where(models.Project.id.in_(list(project_ids)))).all()
-    # Convert to ORM instances
-    return [db.get(models.Project, p.id) for p in projects]
+    # Use query instead of scalars to get ORM objects directly
+    projects = db.query(models.Project).filter(models.Project.id.in_(list(project_ids))).all()
+    return projects
 
 
 @fastapi_app.post("/projects/{project_id}/request-access")
@@ -340,6 +334,7 @@ def reject_member(
     db.commit()
     return {"message": "Rejected"}
 
+
 @fastapi_app.get("/dashboard/documents", response_model=list[schemas.DashboardDocument])
 def list_accessible_documents(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     # list documents for approved memberships or owned projects
@@ -362,6 +357,7 @@ def list_accessible_documents(db: Session = Depends(get_db), current_user: model
             if doc:
                 result.append(schemas.DashboardDocument(project_id=p.id, document_id=doc.id, document_title=doc.title))
     return result
+
 
 @fastapi_app.get("/document/{document_id}", response_model=schemas.DocumentRead)
 def get_document(document_id: int, db: Session = Depends(get_db)):

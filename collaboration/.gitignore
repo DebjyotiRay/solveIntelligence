@@ -1,2 +1,19 @@
 node_modules/
 package-lock.json
+
+
+### Root ignores
+# Python virtual environments
+venv/
+.venv/
+ENV/
+env/
+venv.bak/
+env.bak/
+
+# macOS / Windows
+.DS_Store
+Thumbs.db
+
+# Node modules at repo root (if any)
+node_modules/

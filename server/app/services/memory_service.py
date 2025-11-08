@@ -71,7 +71,15 @@ class MemoryService:
             metadata={"description": "Firm knowledge base", "level": "2_firm"}
         )
 
-        self.embedding_model = SentenceTransformer(self.embedding_model_name)
+        # Use local_files_only to prevent network calls in Docker
+        try:
+            self.embedding_model = SentenceTransformer(self.embedding_model_name, local_files_only=True)
+            logger.info(f"✓ Loaded embedding model from cache: {self.embedding_model_name}")
+        except Exception as e:
+            logger.warning(f"Could not load model from cache, downloading: {e}")
+            # If not cached, download (will work outside Docker or with proper network)
+            self.embedding_model = SentenceTransformer(self.embedding_model_name)
+            logger.info(f"✓ Downloaded and loaded embedding model: {self.embedding_model_name}")
 
         legal_count = self.legal_collection_db.count()
         firm_count = self.firm_collection_db.count()
